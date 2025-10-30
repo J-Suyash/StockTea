@@ -1,0 +1,22 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Name": "StockTea",
+        "Comment": "Plasmoid showing real-time stock portfolio monitoring with charts",
+        "Icon": "finance",
+        "Category": "Office",
+        "Keywords": "portfolio;stock;finance;market;investment;shares;",
+        "Authors": [
+            {
+                "Name": "StockTea Team",
+                "Email": "stocktea@suyashja.in"
+            }
+        ],
+        "Version": "1.0.0",
+        "Website": "https://github.com/J-Suyash/stocktea",
+        "EnabledByDefault": false
+    },
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-NotificationArea": true,
+    "Translations": []
+}
