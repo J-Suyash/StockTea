@@ -13,7 +13,7 @@ import "../code/portfolio-model.js" as PortfolioModel
 
 ScrollView {
     id: scrollView
-    anchors.fill: parent
+    
     
     property double defaultFontPixelSize: Kirigami.Theme.defaultFont.pixelSize
 
@@ -51,7 +51,7 @@ ScrollView {
                     }
                     
                     PlasmaComponents.Label {
-                        text: main.currentPortfolio.currency || "USD"
+                        text: main.currentPortfolio.currency || "INR"
                         font.pixelSize: defaultFontPixelSize * 0.9
                         color: Kirigami.Theme.disabledTextColor
                     }
@@ -120,7 +120,7 @@ ScrollView {
 
         // Positions Header
         PlasmaComponents.Label {
-            text: i18n("Positions (%1)", main.positionsModel.count)
+            text: i18n("Positions (%1)", main.positionsList ? main.positionsList.count : 0)
             font.pixelSize: defaultFontPixelSize * 1.1
             font.bold: true
             Layout.fillWidth: true
@@ -139,7 +139,7 @@ ScrollView {
                 id: positionsListView
                 anchors.fill: parent
                 anchors.margins: 10
-                model: main.positionsModel
+                model: main.positionsList
                 spacing: 5
 
                 delegate: PositionItem {
@@ -153,7 +153,7 @@ ScrollView {
                     text: i18n("No positions in this portfolio")
                     font.pixelSize: defaultFontPixelSize
                     color: Kirigami.Theme.disabledTextColor
-                    visible: main.positionsModel.count === 0
+                    visible: !main.positionsList || main.positionsList.count === 0
                 }
             }
         }

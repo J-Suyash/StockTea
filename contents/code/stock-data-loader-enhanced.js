@@ -1,6 +1,8 @@
 /*
  * Enhanced Stock Data Loader for Indian Equities
- * Unified interface with Upstox API, fallbacks, and Indian market features
+ * NOTE: This module is NOT currently used in the main application.
+ * The main application uses stock-data-loader.js instead.
+ * This file requires Upstox API keys and is kept for future reference.
  */
 
 .import "./upstox-data-loader.js" as UpstoxAPI

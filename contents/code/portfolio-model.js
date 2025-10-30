@@ -11,7 +11,7 @@ function createEmptyStockPosition() {
         quantity: 0,
         buyingPrice: 0.0,
         currentPrice: 0.0,
-        currency: 'USD',
+        currency: 'INR',
         lastUpdate: new Date(),
         dayChange: 0.0,
         dayChangePercent: 0.0,
@@ -34,7 +34,7 @@ function createEmptyPortfolio() {
         dayChange: 0.0,
         dayChangePercent: 0.0,
         lastUpdate: new Date(),
-        currency: 'USD'
+        currency: 'INR'
     }
 }
 
@@ -76,8 +76,9 @@ function calculatePortfolioMetrics(portfolio) {
     return portfolio
 }
 
-function formatCurrency(amount, currency = 'USD') {
+function formatCurrency(amount, currency = 'INR') {
     const symbols = {
+        'INR': '₹',
         'USD': '$',
         'EUR': '€',
         'GBP': '£',
@@ -143,10 +144,27 @@ function isMarketOpen() {
     const now = new Date()
     const day = now.getDay()
     const hour = now.getHours()
+    const minute = now.getMinutes()
     
-    // Simple market hours check (9:30 AM - 4:00 PM EST, Mon-Fri)
-    // This is a simplified version - real implementation would need timezone handling
-    return day >= 1 && day <= 5 && hour >= 9 && hour < 16
+    // Indian stock market hours: 9:15 AM - 3:30 PM IST, Mon-Fri
+    // Simple check without timezone handling - assumes system time is IST
+    if (day < 1 || day > 5) {
+        return false // Weekend
+    }
+    
+    if (hour < 9 || hour > 15) {
+        return false // Outside market hours
+    }
+    
+    if (hour === 9 && minute < 15) {
+        return false // Before 9:15 AM
+    }
+    
+    if (hour === 15 && minute > 30) {
+        return false // After 3:30 PM
+    }
+    
+    return true
 }
 
 function getLastUpdateTimeText(lastUpdate) {

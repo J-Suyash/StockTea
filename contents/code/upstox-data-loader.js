@@ -1,6 +1,8 @@
 /*
  * Upstox API Integration for Indian Equities
- * Primary data source with fallback support
+ * NOTE: This module is NOT currently used in the main application.
+ * API key is not required - application uses stock-data-loader.js instead.
+ * This file is kept for future reference but can be removed if not needed.
  */
 
 function UpstoxAPI() {
@@ -8,6 +10,8 @@ function UpstoxAPI() {
     this.apiKey = plasmoid.configuration.upstoxApiKey || ''
     this.accessToken = plasmoid.configuration.upstoxAccessToken || ''
     this.apiSecret = plasmoid.configuration.upstoxApiSecret || ''
+    this._instruments = null
+    this._lastInstrumentsLoadedAt = 0
 }
 
 UpstoxAPI.prototype.getHeaders = function() {
@@ -25,6 +29,105 @@ UpstoxAPI.prototype.getAuthHeaders = function() {
         'X-Api-Key': this.apiKey,
         'X-Api-Secret': this.apiSecret
     }
+}
+
+UpstoxAPI.prototype.fetchInstruments = function(successCallback, failureCallback) {
+    var self = this
+    if (self._instruments && (Date.now() - self._lastInstrumentsLoadedAt) < 6 * 60 * 60 * 1000) {
+        successCallback(self._instruments)
+        return null
+    }
+    var url = this.baseUrl + '/v2/instruments'
+    return this.makeRequest(url, this.getHeaders(), function(resp) {
+        try {
+            if (resp && resp.data && resp.data.csv_file_download_url) {
+                self.fetchInstrumentsCSV(resp.data.csv_file_download_url, function(text) {
+                    var parsed = self.parseInstrumentsCSV(text)
+                    self._instruments = parsed
+                    self._lastInstrumentsLoadedAt = Date.now()
+                    successCallback(parsed)
+                }, failureCallback)
+                return
+            }
+            if (typeof resp === 'string' && resp.indexOf('instrument_key') !== -1) {
+                var parsed2 = self.parseInstrumentsCSV(resp)
+                self._instruments = parsed2
+                self._lastInstrumentsLoadedAt = Date.now()
+                successCallback(parsed2)
+                return
+            }
+            failureCallback('Unexpected instruments response')
+        } catch (e) {
+            failureCallback('Failed to process instruments')
+        }
+    }, failureCallback)
+}
+
+UpstoxAPI.prototype.fetchInstrumentsCSV = function(csvUrl, successCallback, failureCallback) {
+    var xhr = new XMLHttpRequest()
+    var startedAt = Date.now()
+    emitNetworkLog({ phase: 'open', method: 'GET', url: csvUrl })
+    xhr.open('GET', csvUrl)
+    xhr.timeout = plasmoid.configuration.apiTimeout || 20000
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState === XMLHttpRequest.DONE) {
+            var ok = xhr.status === 200
+            emitNetworkLog({ phase: 'load', method: 'GET', url: csvUrl, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.responseText ? xhr.responseText.length : 0) })
+            if (ok) {
+                successCallback(xhr.responseText)
+            } else {
+                failureCallback('Failed to download instruments CSV')
+            }
+        }
+    }
+    xhr.onerror = function() {
+        emitNetworkLog({ phase: 'error', method: 'GET', url: csvUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
+        failureCallback('Network error')
+    }
+    xhr.ontimeout = function() {
+        emitNetworkLog({ phase: 'timeout', method: 'GET', url: csvUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
+        failureCallback('Request timeout')
+    }
+    xhr.send()
+    return xhr
+}
+
+UpstoxAPI.prototype.parseInstrumentsCSV = function(text) {
+    var lines = (text || '').split(/\r?\n/)
+    if (lines.length === 0) return []
+    var header = lines[0].split(',')
+    var idx = {}
+    for (var i = 0; i < header.length; i++) idx[header[i].trim()] = i
+    var out = []
+    for (var j = 1; j < lines.length; j++) {
+        var line = lines[j]
+        if (!line) continue
+        var cols = line.split(',')
+        var symbol = cols[idx.trading_symbol] || cols[idx.tradingsymbol] || ''
+        var name = cols[idx.name] || ''
+        var exchange = cols[idx.exchange] || ''
+        var instrument_key = cols[idx.instrument_key] || ''
+        var isin = cols[idx.isin] || ''
+        if (!symbol) continue
+        out.push({ symbol: symbol, name: name, exchange: exchange, instrument_key: instrument_key, isin: isin })
+    }
+    return out
+}
+
+UpstoxAPI.prototype.searchTradableSymbols = function(query, successCallback, failureCallback) {
+    var self = this
+    var q = String(query || '').trim().toUpperCase()
+    if (!q) { successCallback([]); return null }
+    var filterAndReturn = function(list) {
+        try {
+            var results = list.filter(function(it) {
+                return (it.symbol && it.symbol.toUpperCase().indexOf(q) !== -1) || (it.name && it.name.toUpperCase().indexOf(q) !== -1)
+            }).slice(0, 25)
+            successCallback(results)
+        } catch (e) { failureCallback('Search failed') }
+    }
+    if (self._instruments) { filterAndReturn(self._instruments); return null }
+    return self.fetchInstruments(function(list) { filterAndReturn(list) }, failureCallback)
 }
 
 UpstoxAPI.prototype.fetchMarketQuote = function(symbol, successCallback, failureCallback) {
@@ -69,6 +172,8 @@ UpstoxAPI.prototype.makeRequest = function(url, headers, successCallback, failur
     xhr.timeout = plasmoid.configuration.apiTimeout || 15000
     
     dbgprint('Upstox API Request: ' + url)
+    const startedAt = Date.now()
+    emitNetworkLog({ phase: 'open', method: 'GET', url: url })
     xhr.open('GET', url)
     
     // Set headers
@@ -78,16 +183,20 @@ UpstoxAPI.prototype.makeRequest = function(url, headers, successCallback, failur
     
     xhr.ontimeout = () => {
         dbgprint('Upstox API timeout')
+        emitNetworkLog({ phase: 'timeout', method: 'GET', url: url, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
         failureCallback('Request timeout')
     }
     
     xhr.onerror = (event) => {
         dbgprint('Upstox API error: ' + xhr.status)
+        emitNetworkLog({ phase: 'error', method: 'GET', url: url, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
         failureCallback('Network error: ' + xhr.status)
     }
     
     xhr.onload = () => {
-        if (xhr.status === 200) {
+        const ok = xhr.status === 200
+        emitNetworkLog({ phase: 'load', method: 'GET', url: url, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.responseText ? xhr.responseText.length : 0) })
+        if (ok) {
             try {
                 const data = JSON.parse(xhr.responseText)
                 successCallback(data)
@@ -109,6 +218,16 @@ UpstoxAPI.prototype.makeRequest = function(url, headers, successCallback, failur
     
     xhr.send()
     return xhr
+}
+
+function emitNetworkLog(entry) {
+    try {
+        if (typeof main !== 'undefined' && typeof main.addNetworkLog === 'function') {
+            var e = entry || {}
+            e.timestamp = new Date().toISOString()
+            main.addNetworkLog(e)
+        }
+    } catch (e) {}
 }
 
 UpstoxAPI.prototype.parseMarketQuote = function(data, symbol) {

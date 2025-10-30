@@ -18,13 +18,54 @@ function fetchCandlestickData(symbol, timeframe, successCallback, failureCallbac
 }
 
 function buildApiUrl(symbol) {
-    // Yahoo Finance API (unofficial, may be less reliable)
-    return 'https://query1.finance.yahoo.com/v8/finance/chart/' + symbol
+    var ySymbol = normalizeYahooSymbol(symbol)
+    return 'https://query1.finance.yahoo.com/v8/finance/chart/' + ySymbol
 }
 
 function buildCandlestickUrl(symbol, timeframe) {
-    // Yahoo Finance chart data
-    return 'https://query1.finance.yahoo.com/v8/finance/chart/' + symbol + '?interval=' + timeframe + '&range=1d'
+    var ySymbol = normalizeYahooSymbol(symbol)
+    var interval = mapToYahooInterval(timeframe)
+    var range = mapToYahooRange(timeframe)
+    return 'https://query1.finance.yahoo.com/v8/finance/chart/' + ySymbol + '?interval=' + interval + '&range=' + range
+}
+
+function normalizeYahooSymbol(symbol) {
+    if (!symbol) return ''
+    var s = String(symbol).trim().toUpperCase()
+    if (s.endsWith('.NS') || s.endsWith('.BO')) return s
+    if (s.endsWith('-EQ')) s = s.slice(0, -3)
+    if (/^[A-Z0-9]{2,10}$/.test(s)) return s + '.NS'
+    return s
+}
+
+function mapToYahooInterval(timeframe) {
+    var tf = String(timeframe || '1d')
+    var mapping = {
+        '1m': '1m',
+        '5m': '5m',
+        '15m': '15m',
+        '30m': '30m',
+        '1h': '60m',
+        '1d': '1d',
+        '1w': '1wk',
+        '1M': '1mo'
+    }
+    return mapping[tf] || '1d'
+}
+
+function mapToYahooRange(timeframe) {
+    var tf = String(timeframe || '1d')
+    var mapping = {
+        '1m': '1d',
+        '5m': '1d',
+        '15m': '5d',
+        '30m': '5d',
+        '1h': '1mo',
+        '1d': '1mo',
+        '1w': '6mo',
+        '1M': '1y'
+    }
+    return mapping[tf] || '1mo'
 }
 
 function getTimespanFromTimeframe(timeframe) {
@@ -71,6 +112,8 @@ function fetchJsonFromInternet(getUrl, successCallback, failureCallback) {
     var xhr = new XMLHttpRequest()
     xhr.timeout = loadingData.loadingDataTimeoutMs || 15000
     dbgprint('GET url opening: ' + getUrl)
+    var startedAt = Date.now()
+    emitNetworkLog({ phase: 'open', method: 'GET', url: getUrl })
     xhr.open('GET', getUrl)
     xhr.setRequestHeader("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 StockPortfolioWidget/1.0")
     dbgprint('GET url sending: ' + getUrl)
@@ -78,17 +121,21 @@ function fetchJsonFromInternet(getUrl, successCallback, failureCallback) {
 
     xhr.ontimeout = function() {
         dbgprint('ERROR - timeout: ' + xhr.status)
+        emitNetworkLog({ phase: 'timeout', method: 'GET', url: getUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
         failureCallback('Request timeout')
     }
 
     xhr.onerror = function(event) {
         dbgprint('ERROR - status: ' + xhr.status)
         dbgprint('ERROR - responseText: ' + xhr.responseText)
+        emitNetworkLog({ phase: 'error', method: 'GET', url: getUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
         failureCallback('Network error')
     }
 
     xhr.onload = function() {
         dbgprint('status: ' + xhr.status)
+        var ok = xhr.status === 200
+        emitNetworkLog({ phase: 'load', method: 'GET', url: getUrl, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.responseText ? xhr.responseText.length : 0) })
         
         if (xhr.status !== 200) {
             dbgprint('ERROR - HTTP status: ' + xhr.status)
@@ -109,6 +156,17 @@ function fetchJsonFromInternet(getUrl, successCallback, failureCallback) {
     
     dbgprint('GET called for url: ' + getUrl)
     return xhr
+}
+
+function emitNetworkLog(entry) {
+    try {
+        if (typeof main !== 'undefined' && typeof main.addNetworkLog === 'function') {
+            var e = entry || {}
+            e.timestamp = new Date().toISOString()
+            main.addNetworkLog(e)
+        }
+    } catch (e) {
+    }
 }
 
 function isJsonString(str) {

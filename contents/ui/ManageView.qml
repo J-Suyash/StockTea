@@ -10,14 +10,17 @@ import org.kde.kirigami as Kirigami
 import QtQuick.Layouts
 import QtQuick.Controls
 import "../code/portfolio-model.js" as PortfolioModel
+import "../code/upstox-data-loader.js" as Upstox
 
 ScrollView {
     id: scrollView
-    anchors.fill: parent
+    
     
     property double defaultFontPixelSize: Kirigami.Theme.defaultFont.pixelSize
     property var editingPosition: null
     property bool isEditing: editingPosition !== null
+    property var upstoxApi: new Upstox.UpstoxAPI()
+    property var selectedInstrument: null
 
     ColumnLayout {
         id: mainColumn
@@ -65,21 +68,7 @@ ScrollView {
                     }
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    
-                    PlasmaComponents.Label {
-                        text: i18n("Currency:")
-                        font.pixelSize: defaultFontPixelSize
-                    }
-                    
-                    PlasmaComponents.ComboBox {
-                        id: currencyCombo
-                        Layout.fillWidth: true
-                        model: ["USD", "EUR", "GBP", "JPY", "CNY"]
-                        currentIndex: model.indexOf(main.currentPortfolio.currency || "USD")
-                    }
-                }
+                
 
                 PlasmaComponents.Button {
                     text: i18n("Save Portfolio Settings")
@@ -129,8 +118,64 @@ ScrollView {
                         id: symbolField
                         Layout.fillWidth: true
                         text: isEditing ? editingPosition.symbol : ""
-                        placeholderText: i18n("e.g., AAPL, GOOGL, MSFT")
-                        upperCase: true
+                        placeholderText: i18n("e.g., RELIANCE, TCS, INFY")
+                        inputMethodHints: Qt.ImhUppercaseOnly
+                        onTextChanged: {
+                            selectedInstrument = null
+                            suggestionDebounce.restart()
+                        }
+                        onEditingFinished: suggestionsPopup.visible = false
+                    }
+                }
+
+                ListModel { id: symbolSuggestions }
+
+                Timer {
+                    id: suggestionDebounce
+                    interval: 250
+                    repeat: false
+                    onTriggered: {
+                        var q = symbolField.text.trim()
+                        if (q.length < 2) { symbolSuggestions.clear(); suggestionsPopup.visible = false; return }
+                        upstoxApi.searchTradableSymbols(q, function(results) {
+                            symbolSuggestions.clear()
+                            for (var i = 0; i < results.length; i++) {
+                                symbolSuggestions.append(results[i])
+                            }
+                            suggestionsPopup.visible = symbolSuggestions.count > 0
+                        }, function(_) {
+                            symbolSuggestions.clear(); suggestionsPopup.visible = false
+                        })
+                    }
+                }
+
+                Popup {
+                    id: suggestionsPopup
+                    x: symbolField.x
+                    y: symbolField.y + symbolField.height + 4
+                    width: symbolField.width
+                    modal: false
+                    focus: true
+                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                    contentItem: ListView {
+                        implicitHeight: Math.min(contentHeight, 200)
+                        model: symbolSuggestions
+                        delegate: PlasmaComponents.ItemDelegate {
+                            width: parent ? parent.width : 0
+                            text: (model.symbol || "") + (model.name ? (" — " + model.name) : "")
+                            onClicked: {
+                                symbolField.text = model.symbol
+                                nameField.text = model.name || model.symbol
+                                selectedInstrument = {
+                                    symbol: model.symbol,
+                                    name: model.name,
+                                    exchange: model.exchange,
+                                    instrument_key: model.instrument_key,
+                                    isin: model.isin
+                                }
+                                suggestionsPopup.visible = false
+                            }
+                        }
                     }
                 }
 
@@ -183,6 +228,7 @@ ScrollView {
                         Layout.fillWidth: true
                         text: isEditing ? editingPosition.buyingPrice.toFixed(2) : ""
                         placeholderText: i18n("0.00")
+                        inputMethodHints: Qt.ImhFormattedNumbersOnly
                         validator: DoubleValidator {
                             bottom: 0.01
                             decimals: 2
@@ -190,22 +236,7 @@ ScrollView {
                     }
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    
-                    PlasmaComponents.Label {
-                        text: i18n("Currency:")
-                        font.pixelSize: defaultFontPixelSize
-                        Layout.preferredWidth: 80
-                    }
-                    
-                    PlasmaComponents.ComboBox {
-                        id: positionCurrencyCombo
-                        Layout.fillWidth: true
-                        model: ["USD", "EUR", "GBP", "JPY", "CNY"]
-                        currentIndex: model.indexOf(isEditing ? editingPosition.currency : main.currentPortfolio.currency)
-                    }
-                }
+                
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -250,7 +281,7 @@ ScrollView {
                 spacing: 10
 
                 PlasmaComponents.Label {
-                    text: i18n("Current Positions (%1)", main.positionsModel.count)
+                    text: i18n("Current Positions (%1)", main.positionsList.count)
                     font.pixelSize: defaultFontPixelSize * 1.1
                     font.bold: true
                     Layout.fillWidth: true
@@ -260,7 +291,7 @@ ScrollView {
                     id: positionsListView
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.min(contentHeight, 200)
-                    model: main.positionsModel
+                    model: main.positionsList
                     spacing: 5
 
                     delegate: Rectangle {
@@ -319,7 +350,7 @@ ScrollView {
                         text: i18n("No positions in this portfolio")
                         font.pixelSize: defaultFontPixelSize
                         color: Kirigami.Theme.disabledTextColor
-                        visible: main.positionsModel.count === 0
+                        visible: main.positionsList.count === 0
                     }
                 }
             }
@@ -332,16 +363,29 @@ ScrollView {
     }
 
     function savePortfolioSettings() {
-        var portfolios = PortfolioModel.getPortfolioFromConfig()
-        var portfolioIndex = plasmoid.configuration.portfolioIndex
+        var portfolios = PortfolioModel.getPortfolioFromConfig() || []
+        var portfolioIndex = plasmoid.configuration.portfolioIndex || 0
+        if (portfolios.length === 0) {
+            var p = PortfolioModel.createEmptyPortfolio()
+            p.id = "default_portfolio"
+            p.name = portfolioNameField.text || i18n("My Portfolio")
+            p.currency = 'INR'
+            portfolios.push(p)
+            portfolioIndex = 0
+            plasmoid.configuration.portfolioIndex = 0
+        }
+        if (portfolioIndex < 0 || portfolioIndex >= portfolios.length) {
+            portfolioIndex = 0
+            plasmoid.configuration.portfolioIndex = 0
+        }
         
         if (portfolioIndex >= 0 && portfolioIndex < portfolios.length) {
             portfolios[portfolioIndex].name = portfolioNameField.text
-            portfolios[portfolioIndex].currency = currencyCombo.currentText
+            portfolios[portfolioIndex].currency = 'INR'
             
             if (PortfolioModel.savePortfolioToConfig(portfolios)) {
                 main.currentPortfolio.name = portfolioNameField.text
-                main.currentPortfolio.currency = currencyCombo.currentText
+                main.currentPortfolio.currency = 'INR'
                 main.fullRepresentationAlias = portfolioNameField.text
             }
         }
@@ -359,13 +403,28 @@ ScrollView {
         newPosition.symbol = symbolField.text.toUpperCase()
         newPosition.name = nameField.text || symbolField.text.toUpperCase()
         newPosition.quantity = quantitySpinBox.value
-        newPosition.buyingPrice = parseFloat(buyPriceField.text)
-        newPosition.currency = positionCurrencyCombo.currentText
+        var bp = parseFloat(buyPriceField.text)
+        newPosition.buyingPrice = isNaN(bp) ? 0 : bp
+        newPosition.currency = 'INR'
+        if (selectedInstrument) newPosition.metadata = selectedInstrument
 
         PortfolioModel.calculatePositionMetrics(newPosition)
 
-        var portfolios = PortfolioModel.getPortfolioFromConfig()
-        var portfolioIndex = plasmoid.configuration.portfolioIndex
+        var portfolios = PortfolioModel.getPortfolioFromConfig() || []
+        var portfolioIndex = plasmoid.configuration.portfolioIndex || 0
+        if (portfolios.length === 0) {
+            var p = PortfolioModel.createEmptyPortfolio()
+            p.id = "default_portfolio"
+            p.name = main.currentPortfolio.name || i18n("My Portfolio")
+            p.currency = main.currentPortfolio.currency || "INR"
+            portfolios.push(p)
+            portfolioIndex = 0
+            plasmoid.configuration.portfolioIndex = 0
+        }
+        if (portfolioIndex < 0 || portfolioIndex >= portfolios.length) {
+            portfolioIndex = 0
+            plasmoid.configuration.portfolioIndex = 0
+        }
         
         if (portfolioIndex >= 0 && portfolioIndex < portfolios.length) {
             portfolios[portfolioIndex].positions.push(newPosition)
@@ -391,13 +450,22 @@ ScrollView {
         updatedPosition.symbol = symbolField.text.toUpperCase()
         updatedPosition.name = nameField.text || symbolField.text.toUpperCase()
         updatedPosition.quantity = quantitySpinBox.value
-        updatedPosition.buyingPrice = parseFloat(buyPriceField.text)
-        updatedPosition.currency = positionCurrencyCombo.currentText
+        var bp2 = parseFloat(buyPriceField.text)
+        updatedPosition.buyingPrice = isNaN(bp2) ? 0 : bp2
+        updatedPosition.currency = 'INR'
+        if (selectedInstrument) updatedPosition.metadata = selectedInstrument
 
         PortfolioModel.calculatePositionMetrics(updatedPosition)
 
-        var portfolios = PortfolioModel.getPortfolioFromConfig()
-        var portfolioIndex = plasmoid.configuration.portfolioIndex
+        var portfolios = PortfolioModel.getPortfolioFromConfig() || []
+        var portfolioIndex = plasmoid.configuration.portfolioIndex || 0
+        if (portfolios.length === 0) {
+            return
+        }
+        if (portfolioIndex < 0 || portfolioIndex >= portfolios.length) {
+            portfolioIndex = 0
+            plasmoid.configuration.portfolioIndex = 0
+        }
         
         if (portfolioIndex >= 0 && portfolioIndex < portfolios.length) {
             var positions = portfolios[portfolioIndex].positions
@@ -424,8 +492,15 @@ ScrollView {
     }
 
     function removePosition(position) {
-        var portfolios = PortfolioModel.getPortfolioFromConfig()
-        var portfolioIndex = plasmoid.configuration.portfolioIndex
+        var portfolios = PortfolioModel.getPortfolioFromConfig() || []
+        var portfolioIndex = plasmoid.configuration.portfolioIndex || 0
+        if (portfolios.length === 0) {
+            return
+        }
+        if (portfolioIndex < 0 || portfolioIndex >= portfolios.length) {
+            portfolioIndex = 0
+            plasmoid.configuration.portfolioIndex = 0
+        }
         
         if (portfolioIndex >= 0 && portfolioIndex < portfolios.length) {
             var positions = portfolios[portfolioIndex].positions
@@ -456,7 +531,7 @@ ScrollView {
         nameField.text = position.name
         quantitySpinBox.value = position.quantity
         buyPriceField.text = position.buyingPrice.toFixed(2)
-        positionCurrencyCombo.currentIndex = positionCurrencyCombo.model.indexOf(position.currency)
+        selectedInstrument = position.metadata || null
     }
 
     function cancelEditing() {
@@ -469,7 +544,7 @@ ScrollView {
         nameField.text = ""
         quantitySpinBox.value = 1
         buyPriceField.text = ""
-        positionCurrencyCombo.currentIndex = positionCurrencyCombo.model.indexOf(main.currentPortfolio.currency)
+        selectedInstrument = null
     }
 
     function validatePositionForm() {

@@ -67,6 +67,11 @@ Rectangle {
                 color: Kirigami.Theme.disabledTextColor
                 Layout.alignment: Qt.AlignRight
             }
+
+            PlasmaComponents.Button {
+                text: i18n("Chart")
+                onClicked: loadCandlestickData(position.symbol)
+            }
         }
         
         // Position details
@@ -180,18 +185,31 @@ Rectangle {
     }
     
     function loadCandlestickData(symbol) {
-        dbgprint("Loading candlestick data for: " + symbol)
-        
-        // Switch to chart tab and load data
-        var parentTabView = parent.parent.parent.parent.parent
-        while (parentTabView && parentTabView.objectName !== "mainTabView") {
-            parentTabView = parentTabView.parent
+        if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+            main.dbgprint("Loading candlestick data for: " + symbol)
         }
         
-        if (parentTabView) {
-            parentTabView.currentIndex = 1 // Switch to chart tab
-            // Emit signal to load chart data
-            chartView.loadSymbolData(symbol)
+        // Find the FullRepresentation component to switch to chart tab
+        var fullRep = null
+        var parentItem = parent
+        while (parentItem) {
+            if (parentItem.objectName === "fullRepresentation") {
+                fullRep = parentItem
+                break
+            }
+            parentItem = parentItem.parent
+        }
+        
+        if (fullRep && fullRep.mainTabBar) {
+            fullRep.mainTabBar.currentIndex = 1
+            
+            // Load chart data after a brief delay to ensure view is switched
+            Qt.callLater(function() {
+                var stackView = fullRep.mainStackView
+                if (stackView && stackView.currentItem && typeof stackView.currentItem.loadSymbolData === 'function') {
+                    stackView.currentItem.loadSymbolData(symbol)
+                }
+            })
         }
     }
 }

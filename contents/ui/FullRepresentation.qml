@@ -14,6 +14,7 @@ import "../code/portfolio-model.js" as PortfolioModel
 
 Item {
     id: fullRepresentation
+    objectName: "fullRepresentation"
 
     property int widgetWidth: main.widgetWidth || 600
     property int widgetHeight: main.widgetHeight || 400
@@ -82,6 +83,7 @@ Item {
     // Main content area with tabs
     TabBar {
         id: mainTabBar
+        objectName: "mainTabBar"
         anchors.top: headerLayout.bottom
         anchors.left: parent.left
         anchors.right: parent.right
@@ -96,37 +98,97 @@ Item {
         TabButton {
             text: i18n("Manage")
         }
+            TabButton {
+                text: i18n("Logs")
+            }
     }
 
     StackView {
         id: mainStackView
+        objectName: "mainStackView"
         anchors.top: mainTabBar.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: footerArea.top
         anchors.margins: 10
 
-        initialItem: PortfolioView {
-            anchors.fill: parent
+        initialItem: portfolioView
+    }
+
+    Component {
+        id: portfolioView
+        PortfolioView {
+        }
+    }
+    
+    Component {
+        id: chartView
+        ChartView {
+        }
+    }
+    
+    Component {
+        id: manageView
+        ManageView {
         }
     }
 
-    // Connect to TabBar current item changes
+    Component {
+        id: logsView
+        Item {
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 8
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    PlasmaComponents.Label {
+                        text: i18n("Network Logs (%1)", main.networkLogs ? main.networkLogs.count : 0)
+                        font.pixelSize: defaultFontPixelSize * 1.1
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+                    PlasmaComponents.Button {
+                        text: i18n("Clear")
+                        onClicked: main.clearNetworkLogs()
+                    }
+                }
+
+                ListView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    model: main.networkLogs
+                    delegate: RowLayout {
+                        width: parent ? parent.width : 0
+                        spacing: 8
+                        PlasmaComponents.Label { text: (model.timestamp || "").toString(); font.pixelSize: defaultFontPixelSize * 0.8; color: Kirigami.Theme.disabledTextColor; Layout.preferredWidth: 150 }
+                        PlasmaComponents.Label { text: (model.method || "GET"); font.pixelSize: defaultFontPixelSize * 0.9; Layout.preferredWidth: 50 }
+                        PlasmaComponents.Label { text: (model.status || "").toString(); font.pixelSize: defaultFontPixelSize * 0.9; Layout.preferredWidth: 50; color: (model.ok ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.negativeTextColor) }
+                        PlasmaComponents.Label { text: (model.durationMs ? model.durationMs + 'ms' : ''); font.pixelSize: defaultFontPixelSize * 0.9; Layout.preferredWidth: 70 }
+                        PlasmaComponents.Label { text: (model.url || ""); font.pixelSize: defaultFontPixelSize * 0.9; Layout.fillWidth: true; wrapMode: Text.NoWrap; elide: Text.ElideRight }
+                    }
+                }
+            }
+        }
+    }
+
+    // Connect to TabBar currentIndex changes
     Connections {
         target: mainTabBar
-        function onCurrentItemChanged() {
-            if (mainTabBar.currentItem) {
-                switch (mainTabBar.currentItem.text) {
-                    case i18n("Portfolio"):
-                        mainStackView.replace(PortfolioView)
+        function onCurrentIndexChanged() {
+            switch (mainTabBar.currentIndex) {
+                case 0:
+                    mainStackView.replace(portfolioView)
+                    break
+                case 1:
+                    mainStackView.replace(chartView)
+                    break
+                case 2:
+                    mainStackView.replace(manageView)
+                    break
+                    case 3:
+                        mainStackView.replace(logsView)
                         break
-                    case i18n("Chart"):
-                        mainStackView.replace(ChartView)
-                        break
-                    case i18n("Manage"):
-                        mainStackView.replace(ManageView)
-                        break
-                }
             }
         }
     }

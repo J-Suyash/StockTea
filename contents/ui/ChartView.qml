@@ -29,7 +29,9 @@ Item {
     }
     
     function loadCandlestickData(symbol, timeframe) {
-        dbgprint("Loading candlestick data for " + symbol + " with timeframe " + timeframe)
+        if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+            main.dbgprint("Loading candlestick data for " + symbol + " with timeframe " + timeframe)
+        }
         
         loadingIndicator.visible = true
         chartCanvas.visible = false
@@ -49,9 +51,11 @@ Item {
                 loadingIndicator.visible = false
                 chartCanvas.visible = true
             },
-            function(error) {
-                dbgprint("Failed to load candlestick data: " + error)
-                showError(i18n("Failed to load chart data: %1", error))
+                function(error) {
+                    if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+                        main.dbgprint("Failed to load candlestick data: " + error)
+                    }
+                    showError(i18n("Failed to load chart data: %1", error))
                 loadingIndicator.visible = false
             }
         )
@@ -302,6 +306,8 @@ Item {
     }
     
     Component.onCompleted: {
-        dbgprint("ChartView completed")
+        if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+            main.dbgprint("ChartView completed")
+        }
     }
 }

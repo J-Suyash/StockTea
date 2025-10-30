@@ -70,19 +70,19 @@ PlasmoidItem {
     }
     preferredRepresentation: onDesktop ? (desktopMode === 1 ? fullRepresentation : compactRepresentation) : compactRepresentation
 
-    property bool vertical: (formFactor === PlasmaCore.Types.Vertical)
-    property bool onDesktop: (location === PlasmaCore.Types.Desktop || location === PlasmaCore.Types.Floating)
+    property bool vertical: (plasmoid.formFactor === PlasmaCore.Types.Vertical)
+    property bool onDesktop: (plasmoid.location === PlasmaCore.Types.Desktop || plasmoid.location === PlasmaCore.Types.Floating)
 
     toolTipTextFormat: Text.RichText
 
     // User Preferences
-    property int desktopMode: plasmoid.configuration.desktopMode
-    property int refreshIntervalMin: plasmoid.configuration.refreshIntervalMin
-    property bool debugLogging: plasmoid.configuration.debugLogging
-    property string widgetFontName: (plasmoid.configuration.widgetFontName === "") ? Kirigami.Theme.defaultFont : plasmoid.configuration.widgetFontName
-    property int widgetFontSize: plasmoid.configuration.widgetFontSize
-    property bool inTray: (containment && containment.containmentType === 129) && ((formFactor === 2) || (formFactor === 3))
-    property string portfoliosStr: plasmoid.configuration.portfolios
+    property int desktopMode: plasmoid.configuration.desktopMode || 0
+    property int refreshIntervalMin: plasmoid.configuration.refreshIntervalMin || 5
+    property bool debugLogging: plasmoid.configuration.debugLogging || false
+    property string widgetFontName: (plasmoid.configuration.widgetFontName === "" || !plasmoid.configuration.widgetFontName) ? Kirigami.Theme.defaultFont : plasmoid.configuration.widgetFontName
+    property int widgetFontSize: plasmoid.configuration.widgetFontSize || 20
+    property bool inTray: ((plasmoid.parent ? (plasmoid.parent.containmentType === 129) : false) && ((plasmoid.formFactor === 2) || (plasmoid.formFactor === 3)))
+    property string portfoliosStr: plasmoid.configuration.portfolios || "[]"
     property int widgetOrder: 0
     property int layoutType: 0
 
@@ -104,10 +104,11 @@ PlasmoidItem {
     property string lastReloadedText: "⬇ " + i18n("%1 ago", "?? min")
 
     property var cacheData: ({
-                                 plasmoidCacheId: plasmoid.id,
-                                 cacheKey: "",
-                                 cacheMap: ({})
-                             })
+        plasmoidCacheId: plasmoid.id || "",
+        cacheKey: "",
+        cacheMap: ({}),
+        alreadyLoadedFromCache: false
+    })
 
     // Current Portfolio Data
     property var currentPortfolio: ({
@@ -121,7 +122,7 @@ PlasmoidItem {
                                         dayChange: 0.0,
                                         dayChangePercent: 0.0,
                                         lastUpdate: new Date(),
-                                        currency: "USD"
+                                        currency: "INR"
                                     })
 
     property int portfoliosCount: 0
@@ -136,11 +137,32 @@ PlasmoidItem {
 
     /* Data Models */
     property var portfolioModel
+    property var positionsList: positionsModel
     ListModel {
         id: positionsModel
     }
     ListModel {
         id: candlestickModel
+    }
+
+    ListModel {
+        id: networkLogs
+    }
+
+    function addNetworkLog(entry) {
+        try {
+            var e = entry || {}
+            e.timestamp = e.timestamp || new Date().toISOString()
+            networkLogs.append(e)
+            if (networkLogs.count > 500) {
+                networkLogs.remove(0, networkLogs.count - 500)
+            }
+        } catch (e2) {
+        }
+    }
+
+    function clearNetworkLogs() {
+        networkLogs.clear()
     }
 
     onLoadingDataCompleteChanged: {
@@ -149,9 +171,15 @@ PlasmoidItem {
 
     onPortfoliosStrChanged: {
         let portfolios = PortfolioModel.getPortfolioFromConfig()
-        let portfoliosCount = portfolios.length
-        let i = Math.min(plasmoid.configuration.portfolioIndex, portfoliosCount - 1)
-        if (currentPortfolio.name !== portfolios[i].name) {
+        let count = portfolios.length
+        if (count === 0) {
+            return
+        }
+        let index = Math.max(0, Math.min(plasmoid.configuration.portfolioIndex || 0, count - 1))
+        if (!portfolios[index] || !portfolios[index].name) {
+            return
+        }
+        if (currentPortfolio.name !== portfolios[index].name) {
             setNextPortfolio(true)
         }
     }
@@ -193,7 +221,10 @@ PlasmoidItem {
 
         var portfolios = PortfolioModel.getPortfolioFromConfig()
         portfoliosCount = portfolios.length
-        var portfolioIndex = plasmoid.configuration.portfolioIndex
+        var portfolioIndex = parseInt(plasmoid.configuration.portfolioIndex)
+        if (isNaN(portfolioIndex)) {
+            portfolioIndex = 0
+        }
         dbgprint("portfolios count=" + portfoliosCount + ", portfolioIndex=" + plasmoid.configuration.portfolioIndex)
         
         if (!initial) {
@@ -208,11 +239,16 @@ PlasmoidItem {
         plasmoid.configuration.portfolioIndex = portfolioIndex
         dbgprint("portfolioIndex now: " + plasmoid.configuration.portfolioIndex)
         
-        var portfolioObject = portfolios[portfolioIndex]
+        var portfolioObject = portfolios[portfolioIndex] || {
+            id: "portfolio_" + portfolioIndex,
+            name: i18n("Portfolio %1", portfolioIndex + 1),
+            positions: [],
+            currency: "INR"
+        }
         currentPortfolio.id = portfolioObject.id || "portfolio_" + portfolioIndex
         currentPortfolio.name = portfolioObject.name || i18n("Portfolio %1", portfolioIndex + 1)
         currentPortfolio.positions = portfolioObject.positions || []
-        currentPortfolio.currency = portfolioObject.currency || "USD"
+        currentPortfolio.currency = portfolioObject.currency || "INR"
 
         fullRepresentationAlias = currentPortfolio.name
 
@@ -328,8 +364,8 @@ PlasmoidItem {
         if (loadingData.lastloadingSuccessTime > 0) {
             lastReloadedText = '⬇ ' + PortfolioModel.getLastUpdateTimeText(loadingData.lastloadingSuccessTime)
         }
-        status = getPlasmoidStatus(loadingData.lastloadingSuccessTime, 3600)
-        dbgprint(status)
+        var newStatus = getPlasmoidStatus(loadingData.lastloadingSuccessTime, 3600)
+        dbgprint("Plasmoid status: " + newStatus)
     }
 
     function updatePortfolioSummary() {
@@ -416,11 +452,11 @@ PlasmoidItem {
                 defaultPortfolio.id = "default_portfolio"
                 defaultPortfolio.name = i18n("My Portfolio")
 
-                // Add some sample positions for demonstration
+                // Add some sample positions for demonstration (Indian stocks)
                 var samplePositions = [
-                    { symbol: "AAPL", name: "Apple Inc.", quantity: 10, buyingPrice: 150.00 },
-                    { symbol: "GOOGL", name: "Alphabet Inc.", quantity: 5, buyingPrice: 2500.00 },
-                    { symbol: "MSFT", name: "Microsoft Corporation", quantity: 8, buyingPrice: 300.00 }
+                    { symbol: "RELIANCE", name: "Reliance Industries", quantity: 10, buyingPrice: 2500.00 },
+                    { symbol: "TCS", name: "Tata Consultancy Services", quantity: 5, buyingPrice: 3500.00 },
+                    { symbol: "INFY", name: "Infosys Limited", quantity: 8, buyingPrice: 1500.00 }
                 ]
                 defaultPortfolio.positions = samplePositions
 
@@ -434,9 +470,9 @@ PlasmoidItem {
         timerData.reloadIntervalMin = plasmoid.configuration.refreshIntervalMin || 5
         timerData.reloadIntervalMs = timerData.reloadIntervalMin * 60000
 
-        dbgprint("formFactor:" + formFactor)
-        dbgprint("location:" + location)
-        dbgprint("containment.containmentType:" + (containment ? containment.containmentType : "undefined"))
+        dbgprint("formFactor:" + plasmoid.formFactor)
+        dbgprint("location:" + plasmoid.location)
+        dbgprint("containment.containmentType:" + (plasmoid.parent ? plasmoid.parent.containmentType : "undefined"))
         if (inTray) {
             dbgprint("IN TRAY!")
         }
