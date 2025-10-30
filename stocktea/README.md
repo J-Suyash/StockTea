@@ -73,7 +73,7 @@ This enhanced KDE Plasma widget provides comprehensive real-time monitoring of I
 
 1. **Copy Widget Files**
    ```bash
-   cp -r stock.portfolio.widget ~/.local/share/plasma/plasmoids/
+   cp -r stocktea ~/.local/share/plasma/plasmoids/
    ```
 
 2. **Install Dependencies** (Optional)
@@ -264,7 +264,7 @@ https://www.bseindia.com/stockinfo/stockinfoeq_NSE_RELIANCE.json
 
 ### Project Structure
 ```
-stock.portfolio.widget/
+stocktea/
 ├── contents/
 │   ├── code/
 │   │   ├── upstox-data-loader.js      # Upstox API integration
