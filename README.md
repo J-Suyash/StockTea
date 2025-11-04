@@ -1,4 +1,4 @@
-# StockTea - Enhanced Stock Portfolio Widget for KDE Plasma - Indian Equities Edition
+# [WIP] StockTea - Enhanced Stock Portfolio Widget for KDE Plasma - Indian Equities Edition
 
 ## Overview
 
