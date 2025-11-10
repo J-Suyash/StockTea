@@ -31,7 +31,7 @@ Item {
 
         PlasmaCore.IconItem {
             id: iconComponent
-            source: "finance"
+            source: "./piggy-bank-icon.svg"
             width: iconSize
             height: iconSize
             Layout.preferredWidth: iconSize

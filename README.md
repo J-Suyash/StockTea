@@ -1,345 +1,209 @@
-# StockTea - Enhanced Stock Portfolio Widget for KDE Plasma - Indian Equities Edition
+# StockTea - KDE Plasma 6 Stock Portfolio Widget
 
-## Overview
+A KDE Plasma 6 applet that displays real-time Indian stock portfolio data using the Upstox v3 REST API, with a clean interface inspired by weather widgets.
 
-This enhanced KDE Plasma widget provides comprehensive real-time monitoring of Indian stock market portfolios with advanced features including Upstox API integration, fallback data sources, Indian market hours handling, watchlists, price alerts, and sophisticated portfolio analytics.
+## Features
 
-## Key Features
+### ✅ Implemented Features
 
-### 🎯 Primary Data Source
-- **Upstox API Integration** - Official Indian trading platform API
-  - Real-time market quotes (`/v2/quote/{symbol}`)
-  - Historical candlestick data (`/v2/historical-candle/{symbol}/{interval}/{from_date}/{to_date}`)
-  - Portfolio positions (`/v2/portfolio/long-term-positions`)
-  - Full market quotes (`/market-quote/quotes/full`)
+- **Upstox v3 API Integration**: Real-time stock data from India's leading trading platform
+- **Indian Stock Support**: Full support for NSE/BSE equities with symbol search
+- **ISIN Resolution**: Automatic mapping from human-readable symbols (e.g., RELIANCE) to ISINs
+- **Portfolio Management**: Add, edit, and remove positions with buying price tracking
+- **Real-time P/L**: Live profit/loss calculations with percentage changes
+- **Candlestick Charts**: Interactive charts with multiple timeframes (1m, 5m, 15m, 30m, 1h, 1d, 1w, 1M)
+- **Market Hours**: Respects Indian market hours (9:15 AM - 3:30 PM IST, Mon-Fri)
+- **Data Persistence**: Portfolio positions saved across sessions
+- **Responsive UI**: Adaptive design that works in both compact and expanded modes
 
-### 🔄 Fallback Data Sources
-- **Yahoo Finance** - Free Indian stock data (e.g., RELIANCE.NS)
-- **NSE/BSE Direct** - Official exchange data feeds
-- **MarketStack** - Basic market data with API key
-- **Alpha Vantage** - Financial data with premium features
+### 🚧 Planned Features
 
-### 🇮🇳 Indian Market Features
-- **Market Hours**: 9:15 AM to 3:30 PM IST (Monday-Friday)
-- **Holiday Support**: Configurable Indian market holidays
-- **Timezone Handling**: Automatic IST conversion
-- **Currency**: INR formatting with Indian number system (lakhs/crores)
-- **Symbol Validation**: NSE/BSE symbol format support
-- **Popular Stocks**: Pre-configured Indian stock symbols
-
-### 📊 Portfolio Analytics
-- **Enhanced P&L Tracking**: Real-time profit/loss calculations
-- **Sector Allocation**: Visual pie charts and breakdown
-- **Diversification Score**: Portfolio risk assessment (0-100)
-- **Top Performers**: Track best/worst performing positions
-- **Win Rate**: Percentage of winning positions
-- **Risk Metrics**: Concentration analysis
-
-### ⚡ Real-Time Monitoring
-- **Configurable Refresh**: 15-60 second intervals
-- **Offline Mode**: Cached data when internet unavailable
-- **Error Recovery**: Automatic fallback on API failures
-- **Market Status**: Live market open/closed indicator
-
-### 🔔 Watchlists & Alerts
-- **Multiple Watchlists**: Organize stocks by categories
-- **Price Alerts**: Above/below/percent change triggers
-- **Sound Notifications**: Optional audio alerts
-- **Visual Indicators**: Color-coded alerts
-- **Alert History**: Track triggered alerts
-
-### 📈 Advanced Charts
-- **Multiple Timeframes**: 1m, 5m, 15m, 30m, 1h, 1d, 1w, 1M
-- **Candlestick Charts**: OHLC data visualization
-- **Volume Display**: Optional volume bars
-- **Technical Indicators**: Basic price action analysis
-
-### 🎨 User Interface
-- **Responsive Design**: Adapts to panel sizes
-- **Compact Mode**: Space-efficient layout
-- **KDE Integration**: Native Plasma theming
-- **Color Coding**: Price changes with visual indicators
-- **Dashboard View**: Comprehensive portfolio overview
+- Price alerts and notifications
+- Multiple watchlists
+- Enhanced analytics (sector allocation, diversification scores)
+- Sound notifications
 
 ## Installation
 
 ### Prerequisites
-- KDE Plasma 5.27+
-- Qt 5.15+
-- Internet connection for live data
-- Optional: Upstox API credentials for full features
+- KDE Plasma 6.0+
+- Internet connection
+- Optional: Upstox API credentials (only needed for authenticated endpoints)
 
 ### Installation Steps
 
-1. **Copy Widget Files**
+1. **Copy the widget directory:**
    ```bash
-   cp -r stocktea ~/.local/share/plasma/plasmoids/
+   mkdir -p ~/.local/share/plasma/plasmoids/org.kde.plasma.widgets.stocktea
+   cp -r contents/ metadata.json ~/.local/share/plasma/plasmoids/org.kde.plasma.widgets.stocktea/
    ```
 
-2. **Install Dependencies** (Optional)
-   ```bash
-   # For enhanced data processing
-   pip install aiohttp pandas numpy
-
-   # For Upstox API (if using)
-   # Get credentials from: https://upstox.com/developer/api/
-   ```
-
-3. **Restart Plasma**
+2. **Restart Plasma:**
    ```bash
    kquitapp5 plasmashell && kstart5 plasmashell
    ```
 
-4. **Add to Panel**
+3. **Add to Panel:**
    - Right-click panel → "Add Widgets..."
-   - Search "StockTea"
+   - Search for "StockTea"
    - Drag to desired location
-
-## Configuration
-
-### API Setup
-
-#### Upstox API (Recommended)
-1. Get API credentials from [Upstox Developer Portal](https://upstox.com/developer/api/)
-2. Right-click widget → "Configure"
-3. Go to "API" tab
-4. Select "Upstox (Primary)"
-5. Enter API Key and Access Token
-6. Enable "Enable Fallback" for redundancy
-
-#### Free Alternatives
-- **Yahoo Finance**: No setup required (limited reliability)
-- **NSE/BSE**: Automatic symbol validation
-
-### Indian Market Settings
-1. Go to "IndianMarkets" configuration tab
-2. Set exchange mode (NSE/BSE/Both)
-3. Configure market hours (default: 9:15-15:30 IST)
-4. Add custom holidays
-5. Choose symbol format preference
-
-### Alert Configuration
-1. Go to "Alerts" tab
-2. Enable price/portfolio alerts
-3. Set alert threshold percentages
-4. Configure notification preferences
-5. Enable/disable sound alerts
-
-### Watchlist Setup
-1. Go to "Watchlist" tab
-2. Add custom watchlists
-3. Populate with Indian stock symbols
-4. Set refresh intervals
-5. Configure alert triggers
 
 ## Usage
 
-### Adding Indian Stock Positions
+### Adding Stocks to Portfolio
 
-1. **Right-click widget** → "Configure"
-2. **Go to "Manage" tab**
-3. **Add Position**:
-   - Symbol: `RELIANCE` (Standard), `RELIANCE-EQ` (Exchange), or `NSE_EQ|INE002A01018` (Upstox format)
-   - Quantity: Number of shares
-   - Buying Price: Price per share in INR
-   - Currency: Automatically set to INR
+1. **Open Widget Settings:**
+   - Right-click widget → "Configure StockTea"
 
-### Setting Up Alerts
-
-1. **Configure Alerts Tab**
-2. **Add Price Alert**:
-   - Symbol: `TCS`
-   - Condition: Above/Below/Change %
-   - Target Value: ₹4500 (or 5% for change alerts)
-   - Enable sound/notification
-
-### Creating Watchlists
-
-1. **Configure Watchlists Tab**
-2. **Add Watchlist**: "IT Stocks"
-3. **Add Symbols**: `TCS`, `INFY`, `WIPRO`, `HCLTECH`
-4. **Set refresh interval**: 30 seconds
+2. **Go to Manage Tab:**
+   - Click "Add Position"
+   - Enter symbol (e.g., "RELIANCE", "TCS", "INFY")
+   - Search will show available Indian stocks
+   - Set quantity and buying price
+   - Click "Add Position"
 
 ### Viewing Charts
 
 1. **Click on any position** in the portfolio view
-2. **Switch to "Chart" tab**
-3. **Select timeframe**: 1m, 5m, 15m, 1h, 1d, 1w, 1M
-4. **View candlestick data** with volume
+2. **Switch to Chart tab** in the expanded view
+3. **Select timeframe** from dropdown (1m to 1M)
+4. **View candlestick data** with OHLC values
 
-## Indian Stock Symbols
+### Managing Positions
 
-### Supported Formats
+1. **Edit Position:**
+   - Click "Edit" button on any position
+   - Update quantity or buying price
+   - Click "Update Position"
+
+2. **Remove Position:**
+   - Click "Remove" button on any position
+   - Confirm removal
+
+## Indian Stock Symbol Formats
+
+The widget supports multiple Indian stock symbol formats:
+
 - **Standard**: `RELIANCE`, `TCS`, `INFY`
-- **Exchange Format**: `RELIANCE-EQ`, `TCS-EQ`
 - **Yahoo Finance**: `RELIANCE.NS`, `TCS.NS`
-- **Upstox Format**: `NSE_EQ|INE002A01018`, `BSE_EQ|INE467B01029`
+- **Exchange Format**: `RELIANCE-EQ`, `TCS-EQ`
 
-### Popular Indian Stocks
-```javascript
-[
-  "RELIANCE", // Reliance Industries
-  "TCS",      // Tata Consultancy Services
-  "INFY",     // Infosys Limited
-  "HDFCBANK", // HDFC Bank
-  "ICICIBANK",// ICICI Bank
-  "SBIN",     // State Bank of India
-  "BHARTIARTL", // Bharti Airtel
-  "KOTAKBANK", // Kotak Mahindra Bank
-  "LT",       // Larsen & Toubro
-  "ITC"       // ITC Limited
-]
-```
+Popular Indian stocks that work out of the box:
+- RELIANCE (Reliance Industries)
+- TCS (Tata Consultancy Services)
+- INFY (Infosys Limited)
+- HDFCBANK (HDFC Bank)
+- ICICIBANK (ICICI Bank)
+- SBIN (State Bank of India)
 
-## API Endpoints Reference
+## API Integration
 
-### Upstox API Integration
+### Upstox v3 REST API
 
-#### Market Quotes
-```javascript
-GET /v2/quote/{symbol}
-Headers: {
-  'Api-Key': 'YOUR_API_KEY',
-  'Authorization': 'Bearer YOUR_ACCESS_TOKEN'
-}
-```
+The widget uses Upstox's public endpoints for market data:
 
-#### Historical Candles
-```javascript
-GET /v2/historical-candle/{symbol}/{interval}/{from_date}/{to_date}
-// Example: /v2/historical-candle/RELIANCE-EQ/1day/2024-01-01/2024-12-31
-```
+- **Quote Data**: `/v2/quote/{symbol}` - Real-time prices
+- **Historical Data**: `/v2/historical-candle/{symbol}/{interval}/{from}/{to}` - Candlestick data
 
-#### Portfolio Positions
-```javascript
-GET /v2/portfolio/long-term-positions
-```
+### Data Sources
 
-### Fallback Sources
+1. **Primary**: Upstox v3 API (Indian stocks)
+2. **Fallback**: Yahoo Finance for broader symbol support
 
-#### Yahoo Finance
-```javascript
-https://query1.finance.yahoo.com/v8/finance/chart/RELIANCE.NS?interval=1d&range=1mo
-```
+## Configuration
 
-#### NSE/BSE Direct
-```javascript
-https://www.bseindia.com/stockinfo/stockinfoeq_NSE_RELIANCE.json
-```
+### Widget Settings
 
-## Troubleshooting
+- **Refresh Interval**: How often to fetch new data (1-60 minutes)
+- **Market Hours**: Enable/disable Indian market hours restriction
+- **Currency**: Set to INR for Indian markets
+- **Debug Logging**: Enable for troubleshooting
 
-### Common Issues
+### Portfolio Settings
 
-#### No Data Displaying
-- Check internet connection
-- Verify API credentials
-- Enable debug logging in settings
-- Check symbol format (use standard Indian format)
+- **Name**: Give your portfolio a custom name
+- **Currency**: Automatically set to INR
+- **Positions**: Add/edit/remove stock positions
 
-#### Market Hours Issues
-- Widget respects Indian market hours (9:15-15:30 IST)
-- Disable "Indian Market Hours" in config to update outside market hours
-- Check holiday calendar in settings
+## Architecture
 
-#### API Rate Limits
-- Increase refresh interval
-- Enable fallback sources
-- Use Yahoo Finance for unlimited free requests
+### File Structure
 
-#### Symbol Validation Errors
-- Use supported symbol formats
-- Check NSE/BSE symbol database
-- Enable "Both NSE & BSE" in exchange settings
-
-### Debug Mode
-1. Enable "Debug Logging" in General settings
-2. Check system logs:
-   ```bash
-   journalctl -f | grep -i stock
-   ```
-3. Monitor network requests in browser developer tools
-
-## Development
-
-### Project Structure
 ```
 stocktea/
+├── metadata.json              # Widget metadata
 ├── contents/
 │   ├── code/
-│   │   ├── upstox-data-loader.js      # Upstox API integration
-│   │   ├── fallback-data-loader.js    # Alternative data sources
-│   │   ├── indian-market-utils.js     # Indian market utilities
-│   │   ├── watchlist-manager.js       # Alert and watchlist system
-│   │   ├── portfolio-model-enhanced.js # Enhanced portfolio calculations
-│   │   ├── stock-data-loader.js       # Main data loader
-│   │   └── portfolio-model.js         # Legacy compatibility
-│   ├── ui/
-│   │   ├── EnhancedDashboard.qml      # Main dashboard
-│   │   ├── FullRepresentation.qml     # Extended view
-│   │   ├── CompactRepresentation.qml  # Compact view
-│   │   ├── PortfolioView.qml          # Portfolio list
-│   │   ├── ChartView.qml              # Chart visualization
-│   │   └── ManageView.qml             # Position management
-│   └── config/
-│       ├── main.xml                   # Enhanced configuration
-│       ├── ConfigAPI.qml              # API settings
-│       ├── ConfigGeneral.qml          # General settings
-│       └── config.qml                 # Configuration categories
-├── metadata.desktop                   # Plasma widget metadata
-└── README.md                         # This file
+│   │   ├── upstox-data-loader.js    # Upstox API integration
+│   │   ├── stock-data-loader.js     # Legacy compatibility
+│   │   ├── portfolio-model.js       # Portfolio calculations
+│   │   └── stock_processor.py       # Python backend (optional)
+│   └── ui/
+│       ├── main.qml                 # Main widget logic
+│       ├── FullRepresentation.qml   # Expanded view
+│       ├── CompactRepresentation.qml # Compact view
+│       ├── PortfolioView.qml        # Portfolio display
+│       ├── ChartView.qml           # Chart visualization
+│       ├── PositionItem.qml        # Individual position item
+│       └── ManageView.qml          # Position management
 ```
 
 ### Key Components
 
-#### Data Flow
-1. `main.qml` orchestrates data loading
-2. `stock-data-loader.js` manages API calls
-3. `upstox-data-loader.js` handles Upstox integration
-4. `fallback-data-loader.js` provides alternatives
-5. `indian-market-utils.js` manages market-specific logic
+- **main.qml**: Main widget controller and data flow
+- **upstox-data-loader.js**: Upstox API integration and data parsing
+- **PortfolioView.qml**: Portfolio positions display
+- **ChartView.qml**: Candlestick chart visualization
+- **ManageView.qml**: Add/edit positions interface
 
-#### UI Architecture
-- **EnhancedDashboard**: Main portfolio view
-- **CompactRepresentation**: Panel/tray display
-- **Tabbed Interface**: Portfolio/Chart/Manage views
-- **Responsive Design**: Adapts to different screen sizes
+## Development
 
-### Extending the Widget
+### Testing
 
-#### Adding New Data Sources
-1. Create new loader in `fallback-data-loader.js`
-2. Add to priority list in constructor
-3. Implement parsing methods
-4. Update configuration options
+Run the comprehensive test to validate the widget:
+```bash
+python test_comprehensive.py
+```
 
-#### Custom Indicators
-1. Extend `portfolio-model-enhanced.js`
-2. Add calculation methods
-3. Update UI components
-4. Add configuration options
+This will check for:
+- QML syntax errors
+- UI sizing issues
+- Icon improvements
+- Code quality
 
-#### New Chart Types
-1. Extend `ChartView.qml`
-2. Add chart type selection
-3. Implement rendering logic
-4. Add data transformation
+### Contributing
 
-## Contributing
+1. Follow KDE Plasma coding standards
+2. Test with Indian market data
+3. Ensure proper error handling
+4. Update documentation
 
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/enhancement`
-3. Follow KDE coding standards
-4. Test with Indian market data
-5. Submit pull request with detailed description
+## Troubleshooting
+
+### No Data Displaying
+- Check internet connection
+- Verify symbol format (use standard Indian symbols)
+- Enable debug logging in settings
+- Check network logs in the widget
+
+### Chart Not Loading
+- Verify symbol has sufficient historical data
+- Try different timeframe (1d instead of 1m)
+- Check if market is open (data limited outside market hours)
+
+### Widget Sizing Issues
+- Test with `python test_comprehensive.py`
+- Check responsive layout constraints
+- Verify Plasma theme compatibility
+
+## License
+
+This project is open source. Please check individual licenses for third-party dependencies.
 
 ## Support
 
-- **Issues**: Report bugs on GitHub Issues
-- **Documentation**: Check configuration examples
-- **Community**: KDE Plasma community forums
-- **API Support**: Upstox Developer Portal
+For issues and feature requests, please report them through the appropriate channels.
 
 ---
 
-**Built specifically for Indian equities with comprehensive Upstox API integration and intelligent fallback systems for reliable market data access.**
+**Built specifically for Indian equity markets with Upstox API integration and responsive design for KDE Plasma 6.**

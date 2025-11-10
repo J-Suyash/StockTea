@@ -10,8 +10,9 @@ import QtQuick.Controls
 import org.kde.plasma.components as PlasmaComponents
 import org.kde.plasma.plasma5support as Plasma5Support
 import org.kde.kirigami as Kirigami
+import Qt.labs.platform
 import "../code/portfolio-model.js" as PortfolioModel
-import "../code/stock-data-loader.js" as StockDataLoader
+import "../code/upstox-data-loader.js" as StockDataLoader
 
 PlasmoidItem {
     id: main
@@ -40,25 +41,28 @@ PlasmoidItem {
     Component {
         id: compactRepresentation
         Item {
-            anchors.fill: parent
+            
+            Layout.minimumWidth: 150
+            Layout.minimumHeight: 40
+            Layout.preferredWidth: 250
+            Layout.preferredHeight: 50
 
             RowLayout {
                 anchors.fill: parent
-                spacing: 5
+                spacing: 8
 
                 Kirigami.Icon {
-                    source: "finance"
-                    width: 32
-                    height: 32
-                    Layout.preferredWidth: 32
-                    Layout.preferredHeight: 32
-                    Layout.alignment: Qt.AlignVCenter
+                    source: "./piggy-bank-icon.svg"
+                    Layout.preferredWidth: Math.min(parent.height - 8, 24)
+                    Layout.preferredHeight: Math.min(parent.height - 8, 24)
+                    Layout.alignment: Qt.AlignVCenter | Qt.AlignHCenter
                 }
 
                 PlasmaComponents.Label {
                     text: main.currentPortfolio.name || "Portfolio"
-                    font.pixelSize: 20
+                    font.pixelSize: Math.max(12, Math.min(parent.height - 16, 18))
                     Layout.fillWidth: true
+                    verticalAlignment: Text.AlignVCenter
                 }
             }
 
@@ -288,8 +292,23 @@ PlasmoidItem {
         var xhrs = []
 
         symbols.forEach(function(symbol, index) {
+            // Check if we have instrument_key metadata for this symbol
+            var position = currentPortfolio.positions.find(function(pos) {
+                return pos.symbol === symbol
+            })
+            
+            var symbolToFetch = symbol
+            // Use instrument_key only if Upstox auth is configured; otherwise, keep plain symbol for Yahoo fallback
+            var hasUpstoxAuth = !!plasmoid.configuration.upstoxAccessToken
+            if (position && position.instrument_key && hasUpstoxAuth) {
+                symbolToFetch = position.instrument_key
+                dbgprint("Using instrument_key for " + symbol + ": " + symbolToFetch)
+            } else if (position && position.instrument_key && !hasUpstoxAuth) {
+                dbgprint("Upstox auth not configured; skipping instrument_key for " + symbol)
+            }
+            
             var xhr = StockDataLoader.fetchStockData(
-                symbol,
+                symbolToFetch,
                 function(jsonString) {
                     var stockData = StockDataLoader.parseStockResponse(jsonString, symbol)
                     if (stockData) {
@@ -302,7 +321,7 @@ PlasmoidItem {
                     }
                 },
                 function(error) {
-                    dbgprint("Failed to load data for " + symbol + ": " + error)
+                    dbgprint("Failed to load data for " + symbol + " (" + symbolToFetch + "): " + error)
                     loadedCount++
                     
                     if (loadedCount === totalSymbols) {
@@ -382,19 +401,23 @@ PlasmoidItem {
         
         for (var i = 0; i < currentPortfolio.positions.length; i++) {
             var position = currentPortfolio.positions[i]
-            positionsModel.append({
-                symbol: position.symbol,
-                name: position.name || position.symbol,
-                quantity: position.quantity,
-                buyingPrice: position.buyingPrice,
-                currentPrice: position.currentPrice,
-                totalValue: position.totalValue,
-                profitLoss: position.profitLoss,
-                profitLossPercent: position.profitLossPercent,
-                dayChange: position.dayChange,
-                dayChangePercent: position.dayChangePercent,
-                currency: position.currency || currentPortfolio.currency
-            })
+            
+            // Ensure all required properties exist with default values
+            var safePosition = {
+                symbol: position.symbol || "",
+                name: position.name || position.symbol || "",
+                quantity: position.quantity || 0,
+                buyingPrice: position.buyingPrice || 0,
+                currentPrice: position.currentPrice || 0,
+                totalValue: position.totalValue || 0,
+                profitLoss: position.profitLoss || 0,
+                profitLossPercent: position.profitLossPercent || 0,
+                dayChange: position.dayChange || 0,
+                dayChangePercent: position.dayChangePercent || 0,
+                currency: position.currency || currentPortfolio.currency || "INR"
+            }
+            
+            positionsModel.append(safePosition)
         }
     }
 
@@ -507,33 +530,56 @@ PlasmoidItem {
             dbgprint('already loaded from cache')
             return true
         }
+        
+        // Try to load from memory cache first
         if (!cacheData.cacheMap || !cacheData.cacheMap[cacheData.cacheKey]) {
-            dbgprint('cache not available')
-            return false
+            dbgprint('memory cache not available, trying persistent cache')
+            
+            // Try to load from persistent storage
+            var persistentCacheContent = portfolioCache.getCachedData()
+            if (persistentCacheContent && persistentCacheContent.length > 0) {
+                try {
+                    cacheData.cacheMap = JSON.parse(persistentCacheContent)
+                    dbgprint('Loaded cache from persistent storage')
+                } catch (e) {
+                    dbgprint('Error parsing persistent cache: ' + e.message)
+                    return false
+                }
+            } else {
+                dbgprint('no persistent cache available')
+                return false
+            }
         }
 
-        currentPortfolio = JSON.parse(cacheData.cacheMap[cacheData.cacheKey][1])
-        updatePositionsModel()
-        updatePortfolioSummary()
-        refreshTooltipSubText()
-        dbgprint("portfolioModelChanged:" + portfolioModelChanged)
-        portfolioModelChanged = !portfolioModelChanged
+        if (cacheData.cacheMap[cacheData.cacheKey]) {
+            currentPortfolio = JSON.parse(cacheData.cacheMap[cacheData.cacheKey][1])
+            updatePositionsModel()
+            updatePortfolioSummary()
+            refreshTooltipSubText()
+            dbgprint("portfolioModelChanged:" + portfolioModelChanged)
+            portfolioModelChanged = !portfolioModelChanged
+            return true
+        }
 
-        return true
+        dbgprint('cache key not found in cache map')
+        return false
     }
 
     function saveToCache() {
         dbgprint2("saveCache")
         dbgprint(currentPortfolio.name)
-        let cacheID = cacheData.cacheKey
+        var cacheID = cacheData.cacheKey
 
-        let contentToCache = {
+        var contentToCache = {
             1: JSON.stringify(currentPortfolio),
             2: JSON.stringify(positionsModel),
             3: JSON.stringify(candlestickModel)
         }
-        print("saving cacheKey = " + cacheID)
+        dbgprint("saving cacheKey = " + cacheID)
         cacheData.cacheMap[cacheID] = contentToCache
+        
+        // Save to persistent storage
+        portfolioCache.writeCache(JSON.stringify(contentToCache))
     }
 
     Timer {
@@ -577,13 +623,76 @@ PlasmoidItem {
     Item {
         id: portfolioCache
         
+        property string cacheDir: StandardPaths.writableLocation(StandardPaths.AppDataLocation) + "/plasma/plasma-org.kde.plasma.widgets.stocktea/"
+        property string cacheFile: cacheDir + "portfolio_cache.json"
+        
         function readCache() {
-            // Implement cache reading logic similar to weather widget
-            return ""
+            var cacheData = ""
+            try {
+                // Use XMLHttpRequest for file I/O in QML
+                var xhr = new XMLHttpRequest()
+                var url = 'file://' + cacheFile
+                dbgprint("Reading cache from: " + url)
+                
+                xhr.open('GET', url, false) // Synchronous request
+                xhr.send()
+                
+                if (xhr.status === 200) {
+                    cacheData = xhr.responseText
+                    dbgprint("Cache read successfully, size: " + cacheData.length + " chars")
+                } else {
+                    dbgprint("Cache file not found or error reading: " + xhr.status)
+                }
+            } catch (e) {
+                dbgprint("Cache read error: " + e.message)
+            }
+            return cacheData
         }
         
         function writeCache(data) {
-            // Implement cache writing logic
+            try {
+                // For now, we'll store cache data in Qt settings as backup
+                // since direct file I/O from QML is limited
+                plasmoid.configuration.lastCacheData = data
+                dbgprint("Cache data saved to configuration, length: " + data.length)
+                
+                // Also attempt to write to file if possible
+                writeCacheToFile(data)
+            } catch (e) {
+                dbgprint("Cache write error: " + e.message)
+            }
+        }
+        
+        function writeCacheToFile(data) {
+            try {
+                // Create directory if it doesn't exist
+                createCacheDirectory()
+                
+                // Note: Direct file writing from QML is limited
+                // This is a placeholder for future implementation
+                dbgprint("File cache write attempted for data length: " + data.length)
+            } catch (e) {
+                dbgprint("File cache write error: " + e.message)
+            }
+        }
+        
+        function createCacheDirectory() {
+            try {
+                // Directory creation would need to be done in Python or C++
+                // For now, we'll rely on the configuration backup
+                dbgprint("Cache directory: " + cacheDir)
+            } catch (e) {
+                dbgprint("Cache directory creation error: " + e.message)
+            }
+        }
+        
+        function getCachedData() {
+            // Try to read from file first, then fallback to configuration
+            var cachedContent = readCache()
+            if (!cachedContent || cachedContent.length === 0) {
+                cachedContent = plasmoid.configuration.lastCacheData || ""
+            }
+            return cachedContent
         }
     }
 }

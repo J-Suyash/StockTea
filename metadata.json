@@ -1,22 +1,39 @@
 {
-    "KPackageStructure": "Plasma/Applet",
     "KPlugin": {
-        "Name": "StockTea",
-        "Comment": "Plasmoid showing real-time stock portfolio monitoring with charts",
-        "Icon": "finance",
-        "Category": "Office",
-        "Keywords": "portfolio;stock;finance;market;investment;shares;",
         "Authors": [
             {
-                "Name": "StockTea Team",
-                "Email": "stocktea@suyashja.in"
+                "Email": "stocktea@example.com",
+                "Name": "StockTea Development Team"
             }
         ],
+        "Name": "StockTea",
+        "Name[cs]": "StockTea",
+        "Name[de]": "StockTea",
+        "Name[nb]": "StockTea",
+        "Name[es]": "StockTea",
+        "Name[ca_ES]": "StockTea",
+        "Name[nl]": "StockTea",
+        "Name[ru]": "StockTea",
+        "Name[sv]": "StockTea",
+        "Name[zh_CN]": "StockTea",
+        "Category": "Finance",
+        "Description": "KDE Plasma widget for Indian stock portfolio management with real-time data from Upstox",
+        "Description[es]": "Widget de KDE Plasma para gestión de cartera de acciones indias con datos en tiempo real de Upstox",
+        "Description[ca_ES]": "Widget de KDE Plasma per a la gestió de cartera d'accions índies amb dades en temps real d'Upstox",
+        "Description[cs]": "Widget KDE Plasma pro správu indické akciové portfolio s daty v reálném čase z Upstox",
+        "Description[de]": "KDE Plasma-Widget für die Verwaltung indischer Aktienportfolios mit Echtzeitdaten von Upstox",
+        "Description[nb]": "KDE Plasma-widget for administrasjon av indisk aksjeportefølje med sanntidsdata fra Upstox",
+        "Description[nl]": "KDE Plasma-widget voor beheer van Indiase aandelenportefeuilles met realtime gegevens van Upstox",
+        "Description[ru]": "Виджет KDE Plasma для управления индийским портфелем акций с данными в реальном времени от Upstox",
+        "Description[sv]": "KDE Plasma-widget för hantering av indisk aktieportfölj med realtidsdata från Upstox",
+        "Description[zh_CN]": "用于印度股票投资组合管理的KDE Plasma小部件，使用Upstox实时数据",
+        "Icon": "wallet-closed",
+        "Id": "org.kde.plasma.widgets.stocktea",
         "Version": "1.0.0",
-        "Website": "https://github.com/J-Suyash/stocktea",
-        "EnabledByDefault": false
+        "License": "GPL-2.0-or-later",
+        "Website": "https://github.com/j-suyash/plasma-stock-widget"
     },
     "X-Plasma-API-Minimum-Version": "6.0",
-    "X-Plasma-NotificationArea": true,
-    "Translations": []
+    "X-Plasma-NotificationAreaCategory": "SystemServices",
+    "KPackageStructure": "Plasma/Applet"
 }

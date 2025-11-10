@@ -34,26 +34,29 @@ Loader {
             property bool vertical: false
             
             property double defaultFontPixelSize: Kirigami.Theme.defaultFont.pixelSize
-            property int iconSize: 32
-            property int fontSize: 20
+            
+            Layout.minimumWidth: 120
+            Layout.minimumHeight: 40
+            Layout.fillWidth: !vertical
+            Layout.fillHeight: vertical
 
             RowLayout {
                 anchors.fill: parent
-                spacing: 5
+                spacing: Math.max(5, parent.width * 0.02)
 
                 Kirigami.Icon {
-                    source: "finance"
-                    width: iconSize
-                    height: iconSize
-                    Layout.preferredWidth: iconSize
-                    Layout.preferredHeight: iconSize
+                    source: "./piggy-bank-icon.svg"
+                    Layout.preferredWidth: Math.min(parent.height - 8, Math.max(16, defaultFontPixelSize * 1.2))
+                    Layout.preferredHeight: Math.min(parent.height - 8, Math.max(16, defaultFontPixelSize * 1.2))
                     Layout.alignment: Qt.AlignVCenter
                 }
 
                 PlasmaComponents.Label {
                     text: main.currentPortfolio.name || "Portfolio"
-                    font.pixelSize: fontSize
+                    font.pixelSize: Math.max(10, Math.min(defaultFontPixelSize * 0.9, parent.height * 0.4))
                     Layout.fillWidth: true
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
                 }
             }
         }
@@ -66,26 +69,32 @@ Loader {
             property bool vertical: false
             
             property double defaultFontPixelSize: Kirigami.Theme.defaultFont.pixelSize
-            property int iconSize: 32
-            property int fontSize: 20
+            
+            Layout.minimumWidth: 80
+            Layout.minimumHeight: 60
+            Layout.fillWidth: !vertical
+            Layout.fillHeight: vertical
 
             ColumnLayout {
                 anchors.fill: parent
-                spacing: 5
+                spacing: Math.max(3, parent.height * 0.02)
 
                 Kirigami.Icon {
-                    source: "finance"
-                    width: iconSize
-                    height: iconSize
-                    Layout.preferredWidth: iconSize
-                    Layout.preferredHeight: iconSize
-                    Layout.alignment: Qt.AlignHCenter
+                    source: "./piggy-bank-icon.svg"
+                    Layout.preferredWidth: Math.min(parent.width - 8, Math.max(16, defaultFontPixelSize))
+                    Layout.preferredHeight: Math.min(parent.width - 8, Math.max(16, defaultFontPixelSize))
+                    Layout.alignment: Qt.AlignHCenter | Qt.AlignTop
                 }
 
                 PlasmaComponents.Label {
                     text: main.currentPortfolio.name || "Portfolio"
-                    font.pixelSize: fontSize
+                    font.pixelSize: Math.max(8, Math.min(defaultFontPixelSize * 0.8, parent.width * 0.15))
                     Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignBottom
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
                 }
             }
         }

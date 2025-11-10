@@ -16,22 +16,26 @@ Item {
     id: fullRepresentation
     objectName: "fullRepresentation"
 
-    property int widgetWidth: main.widgetWidth || 600
-    property int widgetHeight: main.widgetHeight || 400
+    // Expose internal controls for external access (e.g., PositionItem)
+    property alias mainStackView: mainStackView
+    property alias mainTabBar: mainTabBar
 
     property double defaultFontPixelSize: Kirigami.Theme.defaultFont.pixelSize
     property double footerHeight: defaultFontPixelSize
-
-    property int headingHeight: defaultFontPixelSize * 2
+    property double tabBarHeight: defaultFontPixelSize * 2.5
+    property double headerHeight: defaultFontPixelSize * 2
     property string fullRepresentationAlias: main.fullRepresentationAlias
 
-    implicitWidth: widgetWidth
-    implicitHeight: headingHeight + widgetHeight + footerHeight + 20
+    // Dynamic sizing based on content and available space
+    implicitWidth: 700
+    implicitHeight: Math.max(500, headerHeight + tabBarHeight + 300 + footerHeight + 40)
 
-    Layout.minimumWidth: widgetWidth
-    Layout.minimumHeight: headingHeight + widgetHeight + footerHeight + 20
-    Layout.preferredWidth: widgetWidth
-    Layout.preferredHeight: headingHeight + widgetHeight + footerHeight + 20
+    Layout.minimumWidth: 500
+    Layout.minimumHeight: 400
+    Layout.preferredWidth: 700
+    Layout.preferredHeight: 600
+    Layout.maximumWidth: -1  // No maximum width constraint
+    Layout.maximumHeight: -1  // No maximum height constraint
 
     onFullRepresentationAliasChanged: {
         var t = main.fullRepresentationAlias
@@ -45,7 +49,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: 10
-        height: headingHeight
+        height: headerHeight
         spacing: 10
 
         PlasmaComponents.Label {
@@ -87,19 +91,28 @@ Item {
         anchors.top: headerLayout.bottom
         anchors.left: parent.left
         anchors.right: parent.right
+        anchors.topMargin: 5
         anchors.margins: 10
+        height: tabBarHeight
+        Layout.minimumHeight: tabBarHeight
+        Layout.preferredHeight: tabBarHeight
+        Layout.maximumHeight: tabBarHeight
 
         TabButton {
             text: i18n("Portfolio")
+            icon.source: "./piggy-bank-icon.svg"
         }
         TabButton {
             text: i18n("Chart")
+            icon.name: "application-x-chart"
         }
         TabButton {
             text: i18n("Manage")
+            icon.name: "applications-system"
         }
             TabButton {
                 text: i18n("Logs")
+                icon.name: "view-list-details"
             }
     }
 
@@ -205,29 +218,32 @@ Item {
 
         MouseArea {
             id: reloadArea
-            Layout.preferredWidth: reloadText.contentWidth + 20
+            Layout.preferredWidth: reloadLabel.contentWidth + defaultFontPixelSize + 30
             Layout.preferredHeight: footerHeight
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
 
-            PlasmaComponents.Label {
-                id: reloadText
+            RowLayout {
                 anchors.centerIn: parent
-                text: '\u21bb ' + i18n("Reload")
-                font.pixelSize: defaultFontPixelSize * 0.9
+                spacing: 5
+
+                Kirigami.Icon {
+                    source: "./piggy-bank-icon.svg"
+                    Layout.preferredWidth: defaultFontPixelSize
+                    Layout.preferredHeight: defaultFontPixelSize
+                }
+
+                PlasmaComponents.Label {
+                    id: reloadLabel
+                    text: i18n("Reload")
+                    font.pixelSize: defaultFontPixelSize * 0.9
+                }
             }
 
-            onEntered: {
-                reloadText.font.underline = true
-            }
+            onEntered: reloadLabel.font.underline = true
+            onExited: reloadLabel.font.underline = false
 
-            onExited: {
-                reloadText.font.underline = false
-            }
-
-            onClicked: {
-                main.loadDataFromInternet()
-            }
+            onClicked: main.loadDataFromInternet()
         }
 
         PlasmaComponents.Label {

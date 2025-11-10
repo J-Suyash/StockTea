@@ -17,8 +17,11 @@ Rectangle {
     property var position: ({})
     property double defaultFontPixelSize: Kirigami.Theme.defaultFont.pixelSize
     
-    width: parent.width
-    height: positionColumn.height + 10
+    Layout.fillWidth: true
+    Layout.minimumWidth: 300
+    Layout.preferredWidth: -1
+    width: parent ? parent.width : implicitWidth
+    height: Math.max(positionColumn.height + 10, defaultFontPixelSize * 8)
     color: Kirigami.Theme.backgroundColor
     border.color: Kirigami.Theme.disabledTextColor
     border.width: 1
@@ -70,6 +73,7 @@ Rectangle {
 
             PlasmaComponents.Button {
                 text: i18n("Chart")
+                icon.name: "application-x-chart"
                 onClicked: loadCandlestickData(position.symbol)
             }
         }

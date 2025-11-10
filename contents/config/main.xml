@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+    <kcfgfile name=""/>
+
+    <group name="General">
+        <entry name="refreshIntervalMin" type="int">
+            <default>5</default>
+        </entry>
+        <entry name="debugLogging" type="bool">
+            <default>false</default>
+        </entry>
+        <entry name="desktopMode" type="int">
+            <default>0</default>
+        </entry>
+        <entry name="widgetFontName" type="string">
+            <default></default>
+        </entry>
+        <entry name="widgetFontSize" type="int">
+            <default>20</default>
+        </entry>
+        <entry name="portfolios" type="string">
+            <default>[]</default>
+        </entry>
+        <entry name="portfolioIndex" type="int">
+            <default>0</default>
+        </entry>
+        <entry name="firstRun" type="bool">
+            <default>true</default>
+        </entry>
+    </group>
+
+    <group name="API">
+        <entry name="apiProvider" type="int">
+            <default>0</default>
+        </entry>
+        <entry name="apiKey" type="string">
+            <default></default>
+        </entry>
+        <entry name="apiUrl" type="string">
+            <default>https://api.upstox.com/v2</default>
+        </entry>
+        <entry name="useFreeTier" type="bool">
+            <default>true</default>
+        </entry>
+    </group>
+</kcfg>

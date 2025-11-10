@@ -84,7 +84,7 @@ Item {
 
         PlasmaCore.IconItem {
             id: iconComponent
-            source: "finance"
+            source: "./piggy-bank-icon.svg"
             Layout.preferredWidth: iconSize
             Layout.preferredHeight: iconSize
             Layout.alignment: vertical ? Qt.AlignHCenter : Qt.AlignVCenter

@@ -14,8 +14,11 @@ import "../code/portfolio-model.js" as PortfolioModel
 ScrollView {
     id: scrollView
     
-    
     property double defaultFontPixelSize: Kirigami.Theme.defaultFont.pixelSize
+    
+    Layout.fillWidth: true
+    Layout.fillHeight: true
+    Layout.minimumHeight: 400
 
     ColumnLayout {
         id: mainColumn
@@ -129,7 +132,9 @@ ScrollView {
         // Positions List
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(positionsListView.contentHeight + 20, 300)
+            Layout.fillHeight: true
+            Layout.minimumHeight: 200
+            Layout.preferredHeight: Math.max(200, positionsListView.contentHeight + 20)
             color: Kirigami.Theme.backgroundColor
             border.color: Kirigami.Theme.disabledTextColor
             border.width: 1

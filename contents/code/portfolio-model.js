@@ -18,7 +18,11 @@ function createEmptyStockPosition() {
         totalValue: 0.0,
         totalCost: 0.0,
         profitLoss: 0.0,
-        profitLossPercent: 0.0
+        profitLossPercent: 0.0,
+        instrument_key: '',
+        exchange: '',
+        segment: '',
+        metadata: null
     }
 }
 

@@ -1,9 +1,237 @@
 /*
  * Upstox API Integration for Indian Equities
- * NOTE: This module is NOT currently used in the main application.
- * API key is not required - application uses stock-data-loader.js instead.
- * This file is kept for future reference but can be removed if not needed.
+ * Provides the same interface as stock-data-loader.js for drop-in replacement
  */
+
+function dbgprint(msg) {
+    if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+        main.dbgprint('[Upstox] ' + msg)
+    } else {
+        print('[Upstox] ' + msg)
+    }
+}
+
+function emitNetworkLog(entry) {
+    try {
+        if (typeof main !== 'undefined' && typeof main.addNetworkLog === 'function') {
+            var e = entry || {}
+            e.timestamp = new Date().toISOString()
+            main.addNetworkLog(e)
+        }
+    } catch (e) {
+        // Ignore logging errors
+    }
+}
+
+function fetchStockData(symbol, successCallback, failureCallback) {
+    dbgprint('Fetching stock data for symbol: ' + symbol)
+
+    var api = new UpstoxAPI()
+
+    // If caller passed an Upstox instrument_key (contains '|'), use LTP endpoint
+    if (typeof symbol === 'string' && symbol.indexOf('|') !== -1) {
+        return api.fetchLtpForInstrument(symbol, function(data) {
+            try {
+                var ltp = extractLtpFromResponse(data)
+                if (!ltp || isNaN(ltp)) {
+                    // Fallback to Yahoo if LTP missing
+                    return fetchYahooFinanceChart(symbol, successCallback, failureCallback)
+                }
+
+                var response = {
+                    chart: {
+                        result: [{
+                            meta: {
+                                currency: 'INR',
+                                symbol: symbol,
+                                regularMarketPrice: ltp,
+                                regularMarketPreviousClose: ltp
+                            },
+                            timestamp: [Math.floor(Date.now() / 1000)],
+                            indicators: {
+                                quote: [{
+                                    open: [ltp],
+                                    high: [ltp],
+                                    low: [ltp],
+                                    close: [ltp],
+                                    volume: [0]
+                                }]
+                            }
+                        }]
+                    }
+                }
+                successCallback(JSON.stringify(response))
+            } catch (error) {
+                dbgprint('Error handling LTP response: ' + error.message)
+                fetchYahooFinanceChart(symbol, successCallback, failureCallback)
+            }
+        }, function(err) {
+            // On Upstox failure, fallback to Yahoo
+            dbgprint('Upstox LTP failed: ' + err)
+            fetchYahooFinanceChart(symbol, successCallback, failureCallback)
+        })
+    }
+
+    // Otherwise, we likely have a plain symbol like 'RELIANCE'. Use Yahoo fallback
+    return fetchYahooFinanceChart(symbol, successCallback, failureCallback)
+}
+
+function fetchCandlestickData(symbol, timeframe, successCallback, failureCallback) {
+    dbgprint('Fetching candlestick data for symbol: ' + symbol + ', timeframe: ' + timeframe)
+    
+    var api = new UpstoxAPI()
+    
+    // Calculate date range based on timeframe
+    var now = new Date()
+    var fromDate = new Date()
+    
+    switch(timeframe) {
+        case '1m':
+        case '5m':
+        case '15m':
+        case '30m':
+        case '1h':
+            fromDate.setDate(now.getDate() - 1) // 1 day
+            break
+        case '1d':
+            fromDate.setMonth(now.getMonth() - 1) // 1 month
+            break
+        case '1w':
+            fromDate.setMonth(now.getMonth() - 3) // 3 months
+            break
+        case '1M':
+            fromDate.setFullYear(now.getFullYear() - 1) // 1 year
+            break
+        default:
+            fromDate.setMonth(now.getMonth() - 1)
+    }
+    
+    var fromDateStr = fromDate.toISOString().split('T')[0]
+    var toDateStr = now.toISOString().split('T')[0]
+    
+    var upstoxSymbol = convertSymbolToUpstoxFormat(symbol)
+    var interval = getUpstoxInterval(timeframe)
+    var url = api.baseUrl + '/v2/historical-candle/' + upstoxSymbol + '/' + interval + '/' + fromDateStr + '/' + toDateStr
+    
+    return api.makeRequest(url, api.getHeaders(), function(data) {
+        try {
+            var candles = api.parseHistoricalCandles(data, symbol)
+            if (candles && candles.length > 0) {
+                // Convert to Yahoo Finance format for compatibility
+                var response = {
+                    chart: {
+                        result: [{
+                            meta: {
+                                currency: 'INR',
+                                symbol: symbol
+                            },
+                            timestamp: candles.map(function(c) { return Math.floor(c.timestamp.getTime() / 1000) }),
+                            indicators: {
+                                quote: [{
+                                    open: candles.map(function(c) { return c.open }),
+                                    high: candles.map(function(c) { return c.high }),
+                                    low: candles.map(function(c) { return c.low }),
+                                    close: candles.map(function(c) { return c.close }),
+                                    volume: candles.map(function(c) { return c.volume })
+                                }]
+                            }
+                        }]
+                    }
+                }
+                successCallback(JSON.stringify(response))
+            } else {
+                failureCallback('No chart data available')
+            }
+        } catch (error) {
+            dbgprint('Error parsing Upstox historical data: ' + error.message)
+            failureCallback('Parse error: ' + error.message)
+        }
+    }, failureCallback)
+}
+
+function parseStockResponse(jsonString, symbol) {
+    try {
+        var data = JSON.parse(jsonString)
+        
+        if (!data.chart || !data.chart.result || data.chart.result.length === 0) {
+            throw new Error('Invalid response data')
+        }
+        
+        var result = data.chart.result[0]
+        var meta = result.meta || {}
+        var timestamps = result.timestamp || []
+        var quotes = result.indicators.quote[0] || {}
+        
+        if (timestamps.length === 0 || !quotes.close) {
+            throw new Error('No price data available')
+        }
+        
+        var latestIndex = timestamps.length - 1
+        var currentPrice = quotes.close[latestIndex] || 0
+        var previousPrice = quotes.close[latestIndex - 1] || meta.regularMarketPreviousClose || currentPrice
+        var dayChange = currentPrice - previousPrice
+        var dayChangePercent = previousPrice > 0 ? (dayChange / previousPrice) * 100 : 0
+        
+        return {
+            symbol: symbol,
+            currentPrice: currentPrice,
+            openPrice: quotes.open[latestIndex] || currentPrice,
+            highPrice: quotes.high[latestIndex] || currentPrice,
+            lowPrice: quotes.low[latestIndex] || currentPrice,
+            volume: quotes.volume[latestIndex] || 0,
+            timestamp: new Date(timestamps[latestIndex] * 1000),
+            dayChange: dayChange,
+            dayChangePercent: dayChangePercent,
+            currency: meta.currency || 'INR',
+            provider: 'upstox'
+        }
+    } catch (error) {
+        dbgprint('Error parsing stock response: ' + error.message)
+        return null
+    }
+}
+
+function parseCandlestickData(jsonString, symbol) {
+    try {
+        var data = JSON.parse(jsonString)
+        var candlesticks = []
+        
+        // Handle different API response formats
+        if (data.chart && data.chart.result) {
+            // Yahoo Finance format (converted from Upstox)
+            var result = data.chart.result[0]
+            var timestamps = result.timestamp || []
+            var quotes = result.indicators.quote[0] || {}
+            
+            for (var j = 0; j < timestamps.length; j++) {
+                if (quotes.close[j] !== null && quotes.close[j] !== undefined) {
+                    candlesticks.push({
+                        timestamp: new Date(timestamps[j] * 1000),
+                        open: quotes.open[j] || quotes.close[j],
+                        high: quotes.high[j] || quotes.close[j],
+                        low: quotes.low[j] || quotes.close[j],
+                        close: quotes.close[j],
+                        volume: quotes.volume[j] || 0
+                    })
+                }
+            }
+        }
+        
+        // Sort candlesticks by timestamp
+        candlesticks.sort(function(a, b) {
+            return a.timestamp - b.timestamp
+        })
+        
+        return candlesticks
+    } catch (error) {
+        dbgprint('Error parsing candlestick data: ' + error.message)
+        return []
+    }
+}
+
+function getStockProvider() {
+    return 'upstox'
+}
 
 function UpstoxAPI() {
     this.baseUrl = 'https://api.upstox.com'
@@ -33,31 +261,105 @@ UpstoxAPI.prototype.getAuthHeaders = function() {
 
 UpstoxAPI.prototype.fetchInstruments = function(successCallback, failureCallback) {
     var self = this
+    dbgprint("Fetching instruments from Upstox API")
+    
     if (self._instruments && (Date.now() - self._lastInstrumentsLoadedAt) < 6 * 60 * 60 * 1000) {
+        dbgprint("Using cached instruments: " + self._instruments.length + " instruments")
         successCallback(self._instruments)
         return null
     }
+    
+    // Try the direct JSON URL first
+    var jsonUrl = 'https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz'
+    dbgprint("Instruments JSON URL: " + jsonUrl)
+    
+    return this.fetchInstrumentsJSON(jsonUrl, function(data) {
+        try {
+            var parsed = self.parseInstrumentsJSON(data)
+            self._instruments = parsed
+            self._lastInstrumentsLoadedAt = Date.now()
+            dbgprint("Successfully parsed " + parsed.length + " instruments from JSON")
+            successCallback(parsed)
+        } catch (e) {
+            dbgprint("Error parsing JSON instruments: " + e.message)
+            failureCallback('Failed to parse instruments data')
+        }
+    }, failureCallback)
+}
+
+UpstoxAPI.prototype.fetchInstrumentsJSON = function(jsonUrl, successCallback, failureCallback) {
+    var xhr = new XMLHttpRequest()
+    var startedAt = Date.now()
+    emitNetworkLog({ phase: 'open', method: 'GET', url: jsonUrl })
+    xhr.open('GET', jsonUrl)
+    xhr.timeout = plasmoid.configuration.apiTimeout || 30000
+    xhr.responseType = 'arraybuffer'
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState === XMLHttpRequest.DONE) {
+            var ok = xhr.status === 200
+            emitNetworkLog({ phase: 'load', method: 'GET', url: jsonUrl, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.response ? xhr.response.byteLength : 0) })
+            if (ok) {
+                try {
+                    // For now, try to get uncompressed data or use a simpler approach
+                    // Since pako might not be available, let's try a different approach
+                    dbgprint("Attempting to fetch instruments via API endpoint instead")
+                    self.fetchInstrumentsFromAPI(successCallback, failureCallback)
+                } catch (e) {
+                    dbgprint("Error with JSON approach: " + e.message)
+                    failureCallback('Failed to process instruments data')
+                }
+            } else {
+                failureCallback('Failed to download instruments JSON')
+            }
+        }
+    }
+    xhr.onerror = function() {
+        emitNetworkLog({ phase: 'error', method: 'GET', url: jsonUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
+        failureCallback('Network error')
+    }
+    xhr.ontimeout = function() {
+        emitNetworkLog({ phase: 'timeout', method: 'GET', url: jsonUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
+        failureCallback('Request timeout')
+    }
+    xhr.send()
+    return xhr
+}
+
+UpstoxAPI.prototype.fetchInstrumentsFromAPI = function(successCallback, failureCallback) {
+    var self = this
+    dbgprint("Fetching instruments from Upstox API endpoint")
+    
     var url = this.baseUrl + '/v2/instruments'
+    dbgprint("API Instruments URL: " + url)
+    
     return this.makeRequest(url, this.getHeaders(), function(resp) {
         try {
+            dbgprint("Instruments API response received, type: " + typeof resp)
+            
             if (resp && resp.data && resp.data.csv_file_download_url) {
+                dbgprint("Found CSV download URL: " + resp.data.csv_file_download_url)
                 self.fetchInstrumentsCSV(resp.data.csv_file_download_url, function(text) {
                     var parsed = self.parseInstrumentsCSV(text)
                     self._instruments = parsed
                     self._lastInstrumentsLoadedAt = Date.now()
+                    dbgprint("Successfully parsed " + parsed.length + " instruments from CSV")
                     successCallback(parsed)
                 }, failureCallback)
                 return
             }
             if (typeof resp === 'string' && resp.indexOf('instrument_key') !== -1) {
+                dbgprint("Direct CSV response received")
                 var parsed2 = self.parseInstrumentsCSV(resp)
                 self._instruments = parsed2
                 self._lastInstrumentsLoadedAt = Date.now()
+                dbgprint("Successfully parsed " + parsed2.length + " instruments from direct response")
                 successCallback(parsed2)
                 return
             }
+            dbgprint("Unexpected instruments response format")
             failureCallback('Unexpected instruments response')
         } catch (e) {
+            dbgprint("Error processing instruments response: " + e.message)
             failureCallback('Failed to process instruments')
         }
     }, failureCallback)
@@ -92,25 +394,99 @@ UpstoxAPI.prototype.fetchInstrumentsCSV = function(csvUrl, successCallback, fail
     return xhr
 }
 
+UpstoxAPI.prototype.parseInstrumentsJSON = function(data) {
+    dbgprint("Parsing instruments JSON, array length: " + (data ? data.length : 0))
+    
+    if (!data || !Array.isArray(data)) {
+        dbgprint("Invalid JSON data format")
+        return []
+    }
+    
+    var out = []
+    for (var i = 0; i < data.length; i++) {
+        var item = data[i]
+        
+        // Filter for equity instruments only (NSE_EQ, BSE_EQ)
+        if (item.segment !== 'NSE_EQ' && item.segment !== 'BSE_EQ') {
+            continue
+        }
+        
+        var symbol = item.trading_symbol || ''
+        var name = item.name || item.short_name || symbol
+        var exchange = item.exchange || ''
+        var instrument_key = item.instrument_key || ''
+        var isin = item.isin || ''
+        var instrument_type = item.instrument_type || ''
+        
+        if (!symbol) {
+            continue
+        }
+        
+        var instrument = {
+            symbol: symbol,
+            name: name,
+            exchange: exchange,
+            instrument_key: instrument_key,
+            isin: isin,
+            instrument_type: instrument_type,
+            segment: item.segment
+        }
+        out.push(instrument)
+        
+        if (i < 5) { // Log first few instruments for debugging
+            dbgprint("Parsed instrument " + i + ": " + JSON.stringify(instrument))
+        }
+    }
+    
+    dbgprint("Total equity instruments parsed: " + out.length)
+    return out
+}
+
 UpstoxAPI.prototype.parseInstrumentsCSV = function(text) {
+    dbgprint("Parsing instruments CSV, text length: " + (text ? text.length : 0))
+    
     var lines = (text || '').split(/\r?\n/)
-    if (lines.length === 0) return []
+    if (lines.length === 0) {
+        dbgprint("No lines in CSV text")
+        return []
+    }
+    
     var header = lines[0].split(',')
+    dbgprint("CSV header: " + header.join(', '))
+    
     var idx = {}
-    for (var i = 0; i < header.length; i++) idx[header[i].trim()] = i
+    for (var i = 0; i < header.length; i++) {
+        var headerName = header[i].trim()
+        idx[headerName] = i
+        dbgprint("Header index " + i + ": " + headerName + " -> " + i)
+    }
+    
     var out = []
     for (var j = 1; j < lines.length; j++) {
         var line = lines[j]
         if (!line) continue
+        
         var cols = line.split(',')
         var symbol = cols[idx.trading_symbol] || cols[idx.tradingsymbol] || ''
         var name = cols[idx.name] || ''
         var exchange = cols[idx.exchange] || ''
         var instrument_key = cols[idx.instrument_key] || ''
         var isin = cols[idx.isin] || ''
-        if (!symbol) continue
-        out.push({ symbol: symbol, name: name, exchange: exchange, instrument_key: instrument_key, isin: isin })
+        
+        if (!symbol) {
+            dbgprint("Skipping line " + j + " - no symbol found")
+            continue
+        }
+        
+        var instrument = { symbol: symbol, name: name, exchange: exchange, instrument_key: instrument_key, isin: isin }
+        out.push(instrument)
+        
+        if (j <= 5) { // Log first few instruments for debugging
+            dbgprint("Parsed instrument " + j + ": " + JSON.stringify(instrument))
+        }
     }
+    
+    dbgprint("Total instruments parsed: " + out.length)
     return out
 }
 
@@ -121,12 +497,19 @@ UpstoxAPI.prototype.searchTradableSymbols = function(query, successCallback, fai
     var filterAndReturn = function(list) {
         try {
             var results = list.filter(function(it) {
-                return (it.symbol && it.symbol.toUpperCase().indexOf(q) !== -1) || (it.name && it.name.toUpperCase().indexOf(q) !== -1)
+                return (it.symbol && it.symbol.toUpperCase().indexOf(q) !== -1) ||
+                       (it.name && it.name.toUpperCase().indexOf(q) !== -1)
             }).slice(0, 25)
             successCallback(results)
-        } catch (e) { failureCallback('Search failed') }
+        } catch (e) {
+            dbgprint("Search failed: " + e.message)
+            failureCallback('Search failed')
+        }
     }
-    if (self._instruments) { filterAndReturn(self._instruments); return null }
+    if (self._instruments) {
+        filterAndReturn(self._instruments);
+        return null
+    }
     return self.fetchInstruments(function(list) { filterAndReturn(list) }, failureCallback)
 }
 
@@ -161,9 +544,16 @@ UpstoxAPI.prototype.fetchPortfolioPositions = function(successCallback, failureC
 UpstoxAPI.prototype.fetchFullMarketQuotes = function(symbols, successCallback, failureCallback) {
     dbgprint('Fetching full market quotes from Upstox for: ' + symbols.join(', '))
     
-    const symbolList = symbols.map(convertSymbolToUpstoxFormat).join(',')
-    const url = `${this.baseUrl}/market-quote/quotes/full?symbols=${encodeURIComponent(symbolList)}`
+    // Upstox full market quotes endpoint (v2) expects instrument_keys for best results.
+    const symbolList = symbols.join(',')
+    const url = `${this.baseUrl}/v2/market-quote/full?instrument_keys=${encodeURIComponent(symbolList)}`
     
+    return this.makeRequest(url, this.getHeaders(), successCallback, failureCallback)
+}
+
+// Fetch LTP for a single instrument_key
+UpstoxAPI.prototype.fetchLtpForInstrument = function(instrumentKey, successCallback, failureCallback) {
+    const url = `${this.baseUrl}/v2/market-quote/ltp?instrument_key=${encodeURIComponent(instrumentKey)}`
     return this.makeRequest(url, this.getHeaders(), successCallback, failureCallback)
 }
 
@@ -220,28 +610,40 @@ UpstoxAPI.prototype.makeRequest = function(url, headers, successCallback, failur
     return xhr
 }
 
-function emitNetworkLog(entry) {
-    try {
-        if (typeof main !== 'undefined' && typeof main.addNetworkLog === 'function') {
-            var e = entry || {}
-            e.timestamp = new Date().toISOString()
-            main.addNetworkLog(e)
-        }
-    } catch (e) {}
-}
-
 UpstoxAPI.prototype.parseMarketQuote = function(data, symbol) {
     try {
-        if (!data || !data.data) {
-            throw new Error('Invalid market quote response')
+        if (!data) {
+            throw new Error('Empty market quote response')
         }
-        
-        const quoteData = data.data
-        const ltp = quoteData.ltp || 0
-        const open = quoteData.ohlc ? quoteData.ohlc.open : ltp
-        const high = quoteData.ohlc ? quoteData.ohlc.high : ltp
-        const low = quoteData.ohlc ? quoteData.ohlc.low : ltp
-        const prevClose = quoteData.closed_price || ltp
+
+        // Support multiple shapes: single LTP, array of quotes, or keyed objects
+        let quoteData = null
+        if (data.data) {
+            if (Array.isArray(data.data) && data.data.length) {
+                quoteData = data.data[0]
+            } else if (typeof data.data === 'object') {
+                // Sometimes returns { ltp: number, ohlc: {...}, last_price: ... }
+                if ('ltp' in data.data || 'last_price' in data.data) {
+                    quoteData = data.data
+                } else {
+                    // Try first value
+                    const values = Object.values(data.data)
+                    if (values && values.length) quoteData = values[0]
+                }
+            }
+        }
+        // Fallback to root
+        if (!quoteData && (data.ltp || data.last_price)) {
+            quoteData = data
+        }
+        if (!quoteData) throw new Error('No quote found in response')
+
+        const ltp = Number(quoteData.ltp || quoteData.last_price || 0)
+        const ohlc = quoteData.ohlc || {}
+        const open = Number(ohlc.open || ltp)
+        const high = Number(ohlc.high || ltp)
+        const low = Number(ohlc.low || ltp)
+        const prevClose = Number(quoteData.close || quoteData.closed_price || ohlc.close || ltp)
         const dayChange = ltp - prevClose
         const dayChangePercent = prevClose > 0 ? (dayChange / prevClose) * 100 : 0
         
@@ -252,8 +654,8 @@ UpstoxAPI.prototype.parseMarketQuote = function(data, symbol) {
             highPrice: high,
             lowPrice: low,
             previousClose: prevClose,
-            volume: quoteData.volume || 0,
-            timestamp: new Date(quoteData.last_update_time || Date.now()),
+            volume: Number(quoteData.volume || 0),
+            timestamp: new Date(quoteData.last_update_time || quoteData.timestamp || Date.now()),
             dayChange: dayChange,
             dayChangePercent: dayChangePercent,
             currency: 'INR',
@@ -373,4 +775,70 @@ function getUpstoxTimeframeFromInterval(interval) {
         '1month': '1M'
     }
     return mapping[interval] || '1d'
+}
+
+// --------------
+// Helpers / Fallbacks
+// --------------
+
+function extractLtpFromResponse(data) {
+    try {
+        if (!data) return 0
+        if (data.data) {
+            if (typeof data.data === 'object' && !Array.isArray(data.data)) {
+                if (typeof data.data.ltp !== 'undefined') return Number(data.data.ltp)
+                const first = Object.values(data.data)[0]
+                if (first && typeof first.ltp !== 'undefined') return Number(first.ltp)
+                if (typeof data.data.last_price !== 'undefined') return Number(data.data.last_price)
+            }
+            if (Array.isArray(data.data) && data.data.length) {
+                const item = data.data[0]
+                if (typeof item.ltp !== 'undefined') return Number(item.ltp)
+                if (typeof item.last_price !== 'undefined') return Number(item.last_price)
+            }
+        }
+        if (typeof data.ltp !== 'undefined') return Number(data.ltp)
+        if (typeof data.last_price !== 'undefined') return Number(data.last_price)
+    } catch (e) {
+        // ignore
+    }
+    return 0
+}
+
+function convertToYahooFinanceFormat(symbol) {
+    // If instrument_key like NSE_EQ|XXXX, derive a best-effort ticker isn't possible reliably.
+    if (typeof symbol !== 'string') return ''
+    if (symbol.includes('|')) {
+        // Fallback: return as-is to avoid mangling; Yahoo may fail, but Upstox path should have been used.
+        return symbol
+    }
+    let s = String(symbol).trim().toUpperCase()
+    if (s.endsWith('.NS') || s.endsWith('.BO')) return s
+    if (s.endsWith('-EQ')) s = s.slice(0, -3)
+    return s + '.NS'
+}
+
+function fetchYahooFinanceChart(symbol, successCallback, failureCallback) {
+    try {
+        const ySymbol = convertToYahooFinanceFormat(symbol)
+        const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(ySymbol)
+        const xhr = new XMLHttpRequest()
+        xhr.timeout = plasmoid.configuration.apiTimeout || 15000
+        dbgprint('Yahoo Finance GET: ' + url)
+        xhr.open('GET', url)
+        xhr.setRequestHeader('User-Agent', 'Mozilla/5.0 (X11; Linux x86_64) StockPortfolioWidget/2.0')
+        xhr.onerror = function() { failureCallback('Network error') }
+        xhr.ontimeout = function() { failureCallback('Request timeout') }
+        xhr.onload = function() {
+            if (xhr.status !== 200) {
+                return failureCallback('HTTP error: ' + xhr.status)
+            }
+            successCallback(xhr.responseText)
+        }
+        xhr.send()
+        return xhr
+    } catch (e) {
+        failureCallback('Yahoo fetch error: ' + e.message)
+        return null
+    }
 }

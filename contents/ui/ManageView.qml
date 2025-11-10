@@ -15,12 +15,15 @@ import "../code/upstox-data-loader.js" as Upstox
 ScrollView {
     id: scrollView
     
-    
     property double defaultFontPixelSize: Kirigami.Theme.defaultFont.pixelSize
     property var editingPosition: null
     property bool isEditing: editingPosition !== null
     property var upstoxApi: new Upstox.UpstoxAPI()
     property var selectedInstrument: null
+    
+    Layout.fillWidth: true
+    Layout.fillHeight: true
+    Layout.minimumHeight: 500
 
     ColumnLayout {
         id: mainColumn
@@ -136,15 +139,42 @@ ScrollView {
                     repeat: false
                     onTriggered: {
                         var q = symbolField.text.trim()
-                        if (q.length < 2) { symbolSuggestions.clear(); suggestionsPopup.visible = false; return }
+                        if (q.length < 2) {
+                            symbolSuggestions.clear();
+                            suggestionsPopup.visible = false;
+                            if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+                                main.dbgprint("Search query too short: " + q)
+                            }
+                            return
+                        }
+                        
+                        if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+                            main.dbgprint("Starting search for: " + q)
+                        }
+                        
                         upstoxApi.searchTradableSymbols(q, function(results) {
+                            if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+                                main.dbgprint("Search returned " + results.length + " results for query: " + q)
+                            }
+                            
                             symbolSuggestions.clear()
                             for (var i = 0; i < results.length; i++) {
                                 symbolSuggestions.append(results[i])
+                                if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+                                    main.dbgprint("Added search result: " + results[i].symbol + " - " + results[i].name)
+                                }
                             }
                             suggestionsPopup.visible = symbolSuggestions.count > 0
-                        }, function(_) {
-                            symbolSuggestions.clear(); suggestionsPopup.visible = false
+                            
+                            if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+                                main.dbgprint("Search popup visibility: " + suggestionsPopup.visible + ", results count: " + symbolSuggestions.count)
+                            }
+                        }, function(error) {
+                            if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+                                main.dbgprint("Search failed for query: " + q + ", error: " + error)
+                            }
+                            symbolSuggestions.clear();
+                            suggestionsPopup.visible = false
                         })
                     }
                 }
@@ -171,9 +201,15 @@ ScrollView {
                                     name: model.name,
                                     exchange: model.exchange,
                                     instrument_key: model.instrument_key,
-                                    isin: model.isin
+                                    isin: model.isin,
+                                    segment: model.segment || '',
+                                    instrument_type: model.instrument_type || ''
                                 }
                                 suggestionsPopup.visible = false
+                                
+                                if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+                                    main.dbgprint("Selected instrument: " + JSON.stringify(selectedInstrument))
+                                }
                             }
                         }
                     }
@@ -269,7 +305,9 @@ ScrollView {
         // Positions List
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(positionsListView.contentHeight + 20, 300)
+            Layout.fillHeight: true
+            Layout.minimumHeight: 250
+            Layout.preferredHeight: Math.max(250, positionsListView.contentHeight + 40)
             color: Kirigami.Theme.backgroundColor
             border.color: Kirigami.Theme.disabledTextColor
             border.width: 1
@@ -290,7 +328,7 @@ ScrollView {
                 ListView {
                     id: positionsListView
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Math.min(contentHeight, 200)
+                    Layout.fillHeight: true
                     model: main.positionsList
                     spacing: 5
 
@@ -323,13 +361,14 @@ ScrollView {
                             }
 
                             PlasmaComponents.Label {
-                                text: model.buyingPrice ? 
+                                text: model.buyingPrice ?
                                        PortfolioModel.formatCurrency(model.buyingPrice, model.currency) : "--"
                                 font.pixelSize: defaultFontPixelSize
                             }
 
                             PlasmaComponents.Button {
                                 text: i18n("Edit")
+                                icon.name: "document-edit"
                                 onClicked: {
                                     startEditing(model)
                                 }
@@ -337,6 +376,7 @@ ScrollView {
 
                             PlasmaComponents.Button {
                                 text: i18n("Remove")
+                                icon.name: "edit-delete"
                                 onClicked: {
                                     removePosition(model)
                                 }
@@ -406,7 +446,12 @@ ScrollView {
         var bp = parseFloat(buyPriceField.text)
         newPosition.buyingPrice = isNaN(bp) ? 0 : bp
         newPosition.currency = 'INR'
-        if (selectedInstrument) newPosition.metadata = selectedInstrument
+        if (selectedInstrument) {
+            newPosition.metadata = selectedInstrument
+            newPosition.instrument_key = selectedInstrument.instrument_key
+            newPosition.exchange = selectedInstrument.exchange
+            newPosition.segment = selectedInstrument.segment
+        }
 
         PortfolioModel.calculatePositionMetrics(newPosition)
 
@@ -453,7 +498,12 @@ ScrollView {
         var bp2 = parseFloat(buyPriceField.text)
         updatedPosition.buyingPrice = isNaN(bp2) ? 0 : bp2
         updatedPosition.currency = 'INR'
-        if (selectedInstrument) updatedPosition.metadata = selectedInstrument
+        if (selectedInstrument) {
+            updatedPosition.metadata = selectedInstrument
+            updatedPosition.instrument_key = selectedInstrument.instrument_key
+            updatedPosition.exchange = selectedInstrument.exchange
+            updatedPosition.segment = selectedInstrument.segment
+        }
 
         PortfolioModel.calculatePositionMetrics(updatedPosition)
 
@@ -573,5 +623,24 @@ ScrollView {
 
     Component.onCompleted: {
         clearPositionForm()
+        
+        // Test Upstox API initialization
+        if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+            main.dbgprint("ManageView completed - testing Upstox API initialization")
+        }
+        
+        // Test instruments loading
+        upstoxApi.fetchInstruments(function(instruments) {
+            if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+                main.dbgprint("Instruments loaded successfully: " + instruments.length + " instruments")
+                if (instruments.length > 0) {
+                    main.dbgprint("Sample instruments: " + instruments[0].symbol + " - " + instruments[0].name)
+                }
+            }
+        }, function(error) {
+            if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+                main.dbgprint("Failed to load instruments: " + error)
+            }
+        })
     }
 }
