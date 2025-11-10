@@ -1,4 +1,4 @@
-# StockTea - KDE Plasma 6 Stock Portfolio Widget
+# [WIP] StockTea - Enhanced Stock Portfolio Widget for KDE Plasma - Indian Equities Edition
 
 A KDE Plasma 6 applet that displays real-time Indian stock portfolio data using the Upstox v3 REST API, with a clean interface inspired by weather widgets.
 
@@ -206,4 +206,4 @@ For issues and feature requests, please report them through the appropriate chan
 
 ---
 
-**Built specifically for Indian equity markets with Upstox API integration and responsive design for KDE Plasma 6.**
+**Built specifically for Indian equities with comprehensive Upstox API integration and intelligent fallback systems for reliable market data access.**
