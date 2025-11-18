@@ -394,25 +394,26 @@ UpstoxAPI.prototype.fetchInstrumentsJSONText = function (jsonUrl, successCallbac
 
 UpstoxAPI.prototype.fetchInstrumentsFromAPI = function (successCallback, failureCallback) {
     var self = this
-    dbgprint("Fetching instruments from public CSV.gz endpoint")
+    dbgprint("Fetching instruments from public JSON.gz endpoint")
 
-    // Use the complete instruments CSV (gzipped) - publicly accessible, no auth required
-    var publicCsvGzUrl = 'https://assets.upstox.com/market-quote/instruments/exchange/complete.csv.gz'
+    // Use the complete instruments JSON (gzipped) - publicly accessible, no auth required
+    // JSON is faster to parse than CSV
+    var publicJsonGzUrl = 'https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz'
 
-    dbgprint("Public CSV.gz URL: " + publicCsvGzUrl)
+    dbgprint("Public JSON.gz URL: " + publicJsonGzUrl)
 
-    // Fetch the gzipped CSV file
+    // Fetch the gzipped JSON file
     var xhr = new XMLHttpRequest()
     var startedAt = Date.now()
-    emitNetworkLog({ phase: 'open', method: 'GET', url: publicCsvGzUrl })
-    xhr.open('GET', publicCsvGzUrl)
+    emitNetworkLog({ phase: 'open', method: 'GET', url: publicJsonGzUrl })
+    xhr.open('GET', publicJsonGzUrl)
     xhr.timeout = 30000
     xhr.responseType = 'arraybuffer' // Get binary data
 
     xhr.onreadystatechange = function () {
         if (xhr.readyState === XMLHttpRequest.DONE) {
             var ok = xhr.status === 200
-            emitNetworkLog({ phase: 'load', method: 'GET', url: publicCsvGzUrl, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.response ? xhr.response.byteLength : 0) })
+            emitNetworkLog({ phase: 'load', method: 'GET', url: publicJsonGzUrl, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.response ? xhr.response.byteLength : 0) })
 
             if (ok) {
                 try {
@@ -435,34 +436,35 @@ UpstoxAPI.prototype.fetchInstrumentsFromAPI = function (successCallback, failure
                         decompressed = decoder.decode(new Uint8Array(buf))
                     }
 
-                    dbgprint("Decompressed " + decompressed.length + " characters, parsing CSV...")
+                    dbgprint("Decompressed " + decompressed.length + " characters, parsing JSON...")
 
-                    var parsed = self.parseInstrumentsCSV(decompressed)
+                    var data = JSON.parse(decompressed)
+                    var parsed = self.parseInstrumentsJSON(data)
                     self._instruments = parsed
                     self._lastInstrumentsLoadedAt = Date.now()
-                    dbgprint("Successfully parsed " + parsed.length + " instruments from CSV.gz")
+                    dbgprint("Successfully parsed " + parsed.length + " instruments from JSON.gz")
                     successCallback(parsed)
 
                 } catch (e) {
-                    dbgprint("Error processing CSV.gz: " + e.message)
+                    dbgprint("Error processing JSON.gz: " + e.message)
                     failureCallback('Failed to process instruments: ' + e.message)
                 }
             } else {
-                dbgprint("Failed to download CSV.gz: HTTP " + xhr.status)
+                dbgprint("Failed to download JSON.gz: HTTP " + xhr.status)
                 failureCallback('Failed to download instruments: HTTP ' + xhr.status)
             }
         }
     }
 
     xhr.onerror = function () {
-        emitNetworkLog({ phase: 'error', method: 'GET', url: publicCsvGzUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
-        dbgprint("Network error downloading CSV.gz")
+        emitNetworkLog({ phase: 'error', method: 'GET', url: publicJsonGzUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
+        dbgprint("Network error downloading JSON.gz")
         failureCallback('Network error')
     }
 
     xhr.ontimeout = function () {
-        emitNetworkLog({ phase: 'timeout', method: 'GET', url: publicCsvGzUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
-        dbgprint("Timeout downloading CSV.gz")
+        emitNetworkLog({ phase: 'timeout', method: 'GET', url: publicJsonGzUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
+        dbgprint("Timeout downloading JSON.gz")
         failureCallback('Request timeout')
     }
 
