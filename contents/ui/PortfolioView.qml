@@ -29,93 +29,174 @@ ScrollView {
         Rectangle {
             id: summaryCard
             Layout.fillWidth: true
-            Layout.preferredHeight: summaryColumn.height + 20
+            Layout.preferredHeight: summaryColumn.height + 30
             color: Kirigami.Theme.backgroundColor
             border.color: Kirigami.Theme.disabledTextColor
             border.width: 1
             radius: 8
+
+            // Subtle background gradient for premium feel
+            Gradient {
+                orientation: Gradient.Vertical
+                GradientStop { position: 0.0; color: Qt.lighter(Kirigami.Theme.backgroundColor, 1.05) }
+                GradientStop { position: 1.0; color: Kirigami.Theme.backgroundColor }
+            }
 
             ColumnLayout {
                 id: summaryColumn
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                anchors.margins: 10
-                spacing: 10
+                anchors.margins: 15
+                spacing: 12
 
                 RowLayout {
                     Layout.fillWidth: true
                     
                     PlasmaComponents.Label {
                         text: i18n("Portfolio Summary")
-                        font.pixelSize: defaultFontPixelSize * 1.1
+                        font.pixelSize: defaultFontPixelSize * 1.2
                         font.bold: true
                         Layout.fillWidth: true
                     }
                     
-                    PlasmaComponents.Label {
-                        text: main.currentPortfolio.currency || "INR"
-                        font.pixelSize: defaultFontPixelSize * 0.9
-                        color: Kirigami.Theme.disabledTextColor
+                    ColumnLayout {
+                        spacing: 0
+                        Layout.alignment: Qt.AlignRight
+                        
+                        PlasmaComponents.Label {
+                            text: main.currentPortfolio.currency || "INR"
+                            font.pixelSize: defaultFontPixelSize * 0.8
+                            color: Kirigami.Theme.disabledTextColor
+                            Layout.alignment: Qt.AlignRight
+                        }
+                        
+                        PlasmaComponents.Label {
+                            text: PortfolioModel.getLastUpdateTimeText(main.currentPortfolio.lastUpdate)
+                            font.pixelSize: defaultFontPixelSize * 0.7
+                            color: Kirigami.Theme.disabledTextColor
+                            Layout.alignment: Qt.AlignRight
+                        }
                     }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: Kirigami.Theme.disabledTextColor
+                    opacity: 0.3
                 }
 
                 GridLayout {
                     Layout.fillWidth: true
                     columns: 2
                     columnSpacing: 20
-                    rowSpacing: 5
+                    rowSpacing: 8
 
+                    // Total Value (Prominent)
                     PlasmaComponents.Label {
-                        text: i18n("Total Value:")
+                        text: i18n("Total Value")
                         font.pixelSize: defaultFontPixelSize
-                        color: Kirigami.Theme.disabledTextColor
+                        color: Kirigami.Theme.textColor
+                        Layout.alignment: Qt.AlignLeft
                     }
                     PlasmaComponents.Label {
                         text: PortfolioModel.formatCurrency(main.currentPortfolio.totalValue, main.currentPortfolio.currency)
-                        font.pixelSize: defaultFontPixelSize
+                        font.pixelSize: defaultFontPixelSize * 1.5
                         font.bold: true
                         Layout.alignment: Qt.AlignRight
                     }
 
+                    // Total Cost
                     PlasmaComponents.Label {
-                        text: i18n("Total Cost:")
-                        font.pixelSize: defaultFontPixelSize
+                        text: i18n("Invested Amount")
+                        font.pixelSize: defaultFontPixelSize * 0.9
                         color: Kirigami.Theme.disabledTextColor
                     }
                     PlasmaComponents.Label {
                         text: PortfolioModel.formatCurrency(main.currentPortfolio.totalCost, main.currentPortfolio.currency)
-                        font.pixelSize: defaultFontPixelSize
+                        font.pixelSize: defaultFontPixelSize * 0.9
+                        color: Kirigami.Theme.disabledTextColor
                         Layout.alignment: Qt.AlignRight
                     }
 
+                    // Separator
+                    Item { Layout.columnSpan: 2; height: 5; width: 1 }
+
+                    // Total P/L
                     PlasmaComponents.Label {
-                        text: i18n("Total P/L:")
+                        text: i18n("Total P/L")
                         font.pixelSize: defaultFontPixelSize
-                        color: Kirigami.Theme.disabledTextColor
+                        color: Kirigami.Theme.textColor
                     }
-                    PlasmaComponents.Label {
-                        text: PortfolioModel.formatCurrency(main.currentPortfolio.totalProfitLoss, main.currentPortfolio.currency) + 
-                              " (" + PortfolioModel.formatPercent(main.currentPortfolio.totalProfitLossPercent) + ")"
-                        font.pixelSize: defaultFontPixelSize
-                        font.bold: true
-                        color: main.currentPortfolio.totalProfitLoss >= 0 ? 
-                               Kirigami.Theme.positiveTextColor : Kirigami.Theme.negativeTextColor
+                    RowLayout {
                         Layout.alignment: Qt.AlignRight
+                        spacing: 5
+                        
+                        PlasmaComponents.Label {
+                            text: PortfolioModel.formatCurrency(main.currentPortfolio.totalProfitLoss, main.currentPortfolio.currency)
+                            font.pixelSize: defaultFontPixelSize
+                            font.bold: true
+                            color: main.currentPortfolio.totalProfitLoss >= 0 ? 
+                                   Kirigami.Theme.positiveTextColor : Kirigami.Theme.negativeTextColor
+                        }
+                        
+                        Rectangle {
+                            width: plPercentLabel.width + 8
+                            height: plPercentLabel.height + 4
+                            radius: 4
+                            color: (main.currentPortfolio.totalProfitLoss >= 0 ? 
+                                   Kirigami.Theme.positiveTextColor : Kirigami.Theme.negativeTextColor)
+                            opacity: 0.15
+                            
+                            PlasmaComponents.Label {
+                                id: plPercentLabel
+                                anchors.centerIn: parent
+                                text: PortfolioModel.formatPercent(main.currentPortfolio.totalProfitLossPercent)
+                                font.pixelSize: defaultFontPixelSize * 0.85
+                                font.bold: true
+                                color: main.currentPortfolio.totalProfitLoss >= 0 ? 
+                                       Kirigami.Theme.positiveTextColor : Kirigami.Theme.negativeTextColor
+                            }
+                        }
                     }
 
+                    // Day Change
                     PlasmaComponents.Label {
-                        text: i18n("Day Change:")
+                        text: i18n("Day Change")
                         font.pixelSize: defaultFontPixelSize
-                        color: Kirigami.Theme.disabledTextColor
+                        color: Kirigami.Theme.textColor
                     }
-                    PlasmaComponents.Label {
-                        text: PortfolioModel.formatCurrency(main.currentPortfolio.dayChange, main.currentPortfolio.currency) + 
-                              " (" + PortfolioModel.formatPercent(main.currentPortfolio.dayChangePercent) + ")"
-                        font.pixelSize: defaultFontPixelSize
-                        color: main.currentPortfolio.dayChange >= 0 ? 
-                               Kirigami.Theme.positiveTextColor : Kirigami.Theme.negativeTextColor
+                    RowLayout {
                         Layout.alignment: Qt.AlignRight
+                        spacing: 5
+                        
+                        PlasmaComponents.Label {
+                            text: PortfolioModel.formatCurrency(main.currentPortfolio.dayChange, main.currentPortfolio.currency)
+                            font.pixelSize: defaultFontPixelSize
+                            font.bold: true
+                            color: main.currentPortfolio.dayChange >= 0 ? 
+                                   Kirigami.Theme.positiveTextColor : Kirigami.Theme.negativeTextColor
+                        }
+                        
+                        Rectangle {
+                            width: dayPercentLabel.width + 8
+                            height: dayPercentLabel.height + 4
+                            radius: 4
+                            color: (main.currentPortfolio.dayChange >= 0 ? 
+                                   Kirigami.Theme.positiveTextColor : Kirigami.Theme.negativeTextColor)
+                            opacity: 0.15
+                            
+                            PlasmaComponents.Label {
+                                id: dayPercentLabel
+                                anchors.centerIn: parent
+                                text: PortfolioModel.formatPercent(main.currentPortfolio.dayChangePercent)
+                                font.pixelSize: defaultFontPixelSize * 0.85
+                                font.bold: true
+                                color: main.currentPortfolio.dayChange >= 0 ? 
+                                       Kirigami.Theme.positiveTextColor : Kirigami.Theme.negativeTextColor
+                            }
+                        }
                     }
                 }
             }
@@ -146,6 +227,7 @@ ScrollView {
                 anchors.margins: 10
                 model: main.positionsList
                 spacing: 5
+                clip: true
 
                 delegate: PositionItem {
                     width: positionsListView.width
@@ -153,12 +235,51 @@ ScrollView {
                 }
 
                 // Empty state
-                PlasmaComponents.Label {
+                Item {
                     anchors.centerIn: parent
-                    text: i18n("No positions in this portfolio")
-                    font.pixelSize: defaultFontPixelSize
-                    color: Kirigami.Theme.disabledTextColor
+                    width: parent.width * 0.8
+                    height: parent.height * 0.8
                     visible: !main.positionsList || main.positionsList.count === 0
+                    
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: 15
+                        
+                        Kirigami.Icon {
+                            source: "wallet-open"
+                            Layout.preferredWidth: 64
+                            Layout.preferredHeight: 64
+                            Layout.alignment: Qt.AlignHCenter
+                            opacity: 0.5
+                        }
+                        
+                        PlasmaComponents.Label {
+                            text: i18n("Your portfolio is empty")
+                            font.pixelSize: defaultFontPixelSize * 1.2
+                            font.bold: true
+                            Layout.alignment: Qt.AlignHCenter
+                            opacity: 0.7
+                        }
+                        
+                        PlasmaComponents.Label {
+                            text: i18n("Go to the Manage tab to add stocks to your portfolio.")
+                            font.pixelSize: defaultFontPixelSize
+                            color: Kirigami.Theme.disabledTextColor
+                            Layout.alignment: Qt.AlignHCenter
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                            Layout.maximumWidth: 250
+                        }
+                        
+                        PlasmaComponents.Button {
+                            text: i18n("Add Position")
+                            icon.name: "list-add"
+                            Layout.alignment: Qt.AlignHCenter
+                            onClicked: {
+                                main.mainTabBar.currentIndex = 2 // Switch to Manage tab
+                            }
+                        }
+                    }
                 }
             }
         }
