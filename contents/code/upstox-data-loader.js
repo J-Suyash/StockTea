@@ -3,6 +3,9 @@
  * Provides the same interface as stock-data-loader.js for drop-in replacement
  */
 
+// Try to include a gzip inflater (pako) if available in vendor
+try { Qt.include('./vendor/pako_inflate.min.js') } catch (e) {}
+
 function dbgprint(msg) {
     if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
         main.dbgprint('[Upstox] ' + msg)
@@ -149,6 +152,17 @@ function fetchCandlestickData(symbol, timeframe, successCallback, failureCallbac
     }, failureCallback)
 }
 
+// v3 historical candles (unauthenticated fallback)
+function fetchHistoricalCandlesV3(instrumentKey, timeframe, successCallback, failureCallback) {
+    dbgprint(`Fetching historical candles v3 for: ${instrumentKey}, timeframe: ${timeframe}`)
+
+    var api = new UpstoxAPI()
+    var range = computeV3DateRange(timeframe)
+    var tf = mapToV3Interval(timeframe)
+    var url = `${api.baseUrl}/v3/historical-candle/${encodeURIComponent(instrumentKey)}/${tf.unit}/${tf.multiplier}/${range.from}/${range.to}`
+    return api.makeRequestNoAuthV3(url, function(data) { successCallback(data) }, failureCallback)
+}
+
 function parseStockResponse(jsonString, symbol) {
     try {
         var data = JSON.parse(jsonString)
@@ -263,36 +277,48 @@ UpstoxAPI.prototype.fetchInstruments = function(successCallback, failureCallback
     var self = this
     dbgprint("Fetching instruments from Upstox API")
     
+    // Check cache first (6 hour TTL)
     if (self._instruments && (Date.now() - self._lastInstrumentsLoadedAt) < 6 * 60 * 60 * 1000) {
         dbgprint("Using cached instruments: " + self._instruments.length + " instruments")
         successCallback(self._instruments)
         return null
     }
     
-    // Try the direct JSON URL first
-    var jsonUrl = 'https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz'
-    dbgprint("Instruments JSON URL: " + jsonUrl)
-    
+    // Skip gzip file due to XMLHttpRequest file access restrictions in plasmoidviewer
+    // Go directly to CSV endpoint which works without special permissions
+    dbgprint("Skipping gzip file, using CSV API endpoint directly")
+    return this.fetchInstrumentsFromAPI(successCallback, failureCallback)
+}
+
+UpstoxAPI.prototype._fetchInstrumentsGz = function(jsonUrl, successCallback, failureCallback) {
+    var self = this
+    dbgprint("Attempting instruments JSON (gz): " + jsonUrl)
     return this.fetchInstrumentsJSON(jsonUrl, function(data) {
         try {
             var parsed = self.parseInstrumentsJSON(data)
             self._instruments = parsed
             self._lastInstrumentsLoadedAt = Date.now()
-            dbgprint("Successfully parsed " + parsed.length + " instruments from JSON")
+            dbgprint("Successfully parsed " + parsed.length + " instruments from JSON (gz)")
             successCallback(parsed)
         } catch (e) {
-            dbgprint("Error parsing JSON instruments: " + e.message)
-            failureCallback('Failed to parse instruments data')
+            dbgprint("Error parsing gz instruments JSON: " + e.message)
+            // Final fallback: try API endpoint (CSV)
+            self.fetchInstrumentsFromAPI(successCallback, failureCallback)
         }
-    }, failureCallback)
+    }, function(err){
+        // Final fallback: try API endpoint (CSV)
+        self.fetchInstrumentsFromAPI(successCallback, failureCallback)
+    })
 }
 
 UpstoxAPI.prototype.fetchInstrumentsJSON = function(jsonUrl, successCallback, failureCallback) {
+    var self = this
     var xhr = new XMLHttpRequest()
     var startedAt = Date.now()
     emitNetworkLog({ phase: 'open', method: 'GET', url: jsonUrl })
     xhr.open('GET', jsonUrl)
-    xhr.timeout = plasmoid.configuration.apiTimeout || 30000
+    xhr.timeout = (typeof plasmoid !== 'undefined' && plasmoid.configuration && plasmoid.configuration.apiTimeout) ? plasmoid.configuration.apiTimeout : 30000
+    // Fetch as arraybuffer to manually gunzip
     xhr.responseType = 'arraybuffer'
     xhr.onreadystatechange = function() {
         if (xhr.readyState === XMLHttpRequest.DONE) {
@@ -300,13 +326,26 @@ UpstoxAPI.prototype.fetchInstrumentsJSON = function(jsonUrl, successCallback, fa
             emitNetworkLog({ phase: 'load', method: 'GET', url: jsonUrl, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.response ? xhr.response.byteLength : 0) })
             if (ok) {
                 try {
-                    // For now, try to get uncompressed data or use a simpler approach
-                    // Since pako might not be available, let's try a different approach
-                    dbgprint("Attempting to fetch instruments via API endpoint instead")
-                    self.fetchInstrumentsFromAPI(successCallback, failureCallback)
+                    var buf = xhr.response
+                    if (!buf || !buf.byteLength) throw new Error('Empty gzip payload')
+                    // Use pako or Qt.inflateData if available
+                    var gunzipped
+                    if (typeof pako !== 'undefined' && typeof pako.inflate === 'function') {
+                        gunzipped = pako.inflate(new Uint8Array(buf), { to: 'string' })
+                    } else if (typeof Qt !== 'undefined' && typeof Qt.inflateData === 'function') {
+                        gunzipped = Qt.inflateData(buf)
+                    } else {
+                        throw new Error('No gzip inflater available')
+                    }
+                    var data = JSON.parse(gunzipped)
+                    var parsed = self.parseInstrumentsJSON(data)
+                    self._instruments = parsed
+                    self._lastInstrumentsLoadedAt = Date.now()
+                    successCallback(parsed)
                 } catch (e) {
-                    dbgprint("Error with JSON approach: " + e.message)
-                    failureCallback('Failed to process instruments data')
+                    dbgprint('Gzip instruments error: ' + e.message)
+                    // Fallback to API endpoint (CSV)
+                    self.fetchInstrumentsFromAPI(successCallback, failureCallback)
                 }
             } else {
                 failureCallback('Failed to download instruments JSON')
@@ -321,6 +360,34 @@ UpstoxAPI.prototype.fetchInstrumentsJSON = function(jsonUrl, successCallback, fa
         emitNetworkLog({ phase: 'timeout', method: 'GET', url: jsonUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
         failureCallback('Request timeout')
     }
+    xhr.send()
+    return xhr
+}
+
+UpstoxAPI.prototype.fetchInstrumentsJSONText = function(jsonUrl, successCallback, failureCallback) {
+    var xhr = new XMLHttpRequest()
+    var startedAt = Date.now()
+    emitNetworkLog({ phase: 'open', method: 'GET', url: jsonUrl })
+    xhr.open('GET', jsonUrl)
+    xhr.timeout = (typeof plasmoid !== 'undefined' && plasmoid.configuration && plasmoid.configuration.apiTimeout) ? plasmoid.configuration.apiTimeout : 15000
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState === XMLHttpRequest.DONE) {
+            var ok = xhr.status === 200
+            emitNetworkLog({ phase: 'load', method: 'GET', url: jsonUrl, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.responseText ? xhr.responseText.length : 0) })
+            if (ok) {
+                try {
+                    var data = JSON.parse(xhr.responseText)
+                    successCallback(data)
+                } catch (e) {
+                    failureCallback('Invalid JSON')
+                }
+            } else {
+                failureCallback('HTTP ' + xhr.status)
+            }
+        }
+    }
+    xhr.onerror = function(){ emitNetworkLog({ phase: 'error', method: 'GET', url: jsonUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt }); failureCallback('Network error') }
+    xhr.ontimeout = function(){ emitNetworkLog({ phase: 'timeout', method: 'GET', url: jsonUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt }); failureCallback('Timeout') }
     xhr.send()
     return xhr
 }
@@ -559,7 +626,7 @@ UpstoxAPI.prototype.fetchLtpForInstrument = function(instrumentKey, successCallb
 
 UpstoxAPI.prototype.makeRequest = function(url, headers, successCallback, failureCallback) {
     const xhr = new XMLHttpRequest()
-    xhr.timeout = plasmoid.configuration.apiTimeout || 15000
+    xhr.timeout = (typeof plasmoid !== 'undefined' && plasmoid.configuration && plasmoid.configuration.apiTimeout) ? plasmoid.configuration.apiTimeout : 15000
     
     dbgprint('Upstox API Request: ' + url)
     const startedAt = Date.now()
@@ -606,6 +673,29 @@ UpstoxAPI.prototype.makeRequest = function(url, headers, successCallback, failur
         }
     }
     
+    xhr.send()
+    return xhr
+}
+
+// Minimal v3 request without Authorization header (as per user-provided example)
+UpstoxAPI.prototype.makeRequestNoAuthV3 = function(url, successCallback, failureCallback) {
+    const xhr = new XMLHttpRequest()
+    xhr.timeout = plasmoid.configuration.apiTimeout || 15000
+    dbgprint('Upstox v3 Request: ' + url)
+    const startedAt = Date.now()
+    emitNetworkLog({ phase: 'open', method: 'GET', url: url })
+    xhr.open('GET', url)
+    xhr.setRequestHeader('Accept', 'application/json')
+    xhr.setRequestHeader('Content-Type', 'application/json')
+    xhr.ontimeout = () => { emitNetworkLog({ phase: 'timeout', method: 'GET', url: url, status: xhr.status, ok: false, durationMs: Date.now() - startedAt }); failureCallback('Request timeout') }
+    xhr.onerror = () => { emitNetworkLog({ phase: 'error', method: 'GET', url: url, status: xhr.status, ok: false, durationMs: Date.now() - startedAt }); failureCallback('Network error: ' + xhr.status) }
+    xhr.onload = () => {
+        const ok = xhr.status === 200
+        emitNetworkLog({ phase: 'load', method: 'GET', url: url, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.responseText ? xhr.responseText.length : 0) })
+        if (ok) {
+            try { successCallback(JSON.parse(xhr.responseText)) } catch (e) { failureCallback('Invalid JSON response') }
+        } else { failureCallback('API error: ' + xhr.status) }
+    }
     xhr.send()
     return xhr
 }
@@ -694,6 +784,67 @@ UpstoxAPI.prototype.parseHistoricalCandles = function(data, symbol) {
         dbgprint('Error parsing Upstox historical candles: ' + error.message)
         return []
     }
+}
+
+// v3 parser
+UpstoxAPI.prototype.parseHistoricalCandlesV3 = function(data, symbol) {
+    try {
+        if (!data || data.status !== 'success' || !data.data) {
+            throw new Error('Invalid historical v3 data response')
+        }
+        const out = []
+        const candles = data.data.candles || []
+        candles.forEach(c => {
+            // Format: [timestampISO, open, high, low, close, volume, oi?]
+            out.push({
+                timestamp: new Date(c[0]),
+                open: Number(c[1]),
+                high: Number(c[2]),
+                low: Number(c[3]),
+                close: Number(c[4]),
+                volume: parseInt(c[5] || 0)
+            })
+        })
+        return out.sort((a,b) => a.timestamp - b.timestamp)
+    } catch (e) {
+        dbgprint('Error parsing Upstox v3 historical candles: ' + e.message)
+        return []
+    }
+}
+
+function mapToV3Interval(timeframe) {
+    switch (String(timeframe)) {
+        case '1m': return { unit: 'minutes', multiplier: 1 }
+        case '5m': return { unit: 'minutes', multiplier: 5 }
+        case '15m': return { unit: 'minutes', multiplier: 15 }
+        case '30m': return { unit: 'minutes', multiplier: 30 }
+        case '1h': return { unit: 'minutes', multiplier: 60 }
+        case '1w': return { unit: 'week', multiplier: 1 }
+        case '1M': return { unit: 'month', multiplier: 1 }
+        case '1d':
+        default: return { unit: 'day', multiplier: 1 }
+    }
+}
+
+function computeV3DateRange(timeframe) {
+    const now = new Date()
+    const to = new Date(now)
+    const from = new Date(now)
+    switch (String(timeframe)) {
+        case '1m':
+        case '5m':
+        case '15m':
+        case '30m':
+        case '1h': from.setDate(now.getDate() - 5); break // ~5 days intraday
+        case '1w': from.setFullYear(now.getFullYear() - 1); break
+        case '1M': from.setFullYear(now.getFullYear() - 2); break
+        case '1d':
+        default: from.setFullYear(now.getFullYear() - 1); break
+    }
+    const iso = d => d.toISOString().slice(0,10)
+    const f = iso(from)
+    const t = iso(to)
+    return { from: f, to: t }
 }
 
 UpstoxAPI.prototype.parsePortfolioPositions = function(data, symbol) {
@@ -841,4 +992,9 @@ function fetchYahooFinanceChart(symbol, successCallback, failureCallback) {
         failureCallback('Yahoo fetch error: ' + e.message)
         return null
     }
+}
+// v3 LTP without auth; return minimal object-like response
+UpstoxAPI.prototype.fetchLtpV3NoAuth = function(instrumentKey, successCallback, failureCallback) {
+    const url = `${this.baseUrl}/v3/market-quote/ltp?instrument_key=${encodeURIComponent(instrumentKey)}`
+    return this.makeRequestNoAuthV3(url, successCallback, failureCallback)
 }
