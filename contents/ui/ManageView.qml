@@ -68,6 +68,18 @@ ScrollView {
                         Layout.fillWidth: true
                         text: main.currentPortfolio.name || ""
                         placeholderText: i18n("Enter portfolio name")
+                        
+                        Component.onCompleted: {
+                            // Ensure field is populated on load
+                            text = main.currentPortfolio.name || i18n("My Portfolio")
+                        }
+                        
+                        Connections {
+                            target: main
+                            function onCurrentPortfolioChanged() {
+                                portfolioNameField.text = main.currentPortfolio.name || i18n("My Portfolio")
+                            }
+                        }
                     }
                 }
 
@@ -137,8 +149,8 @@ ScrollView {
                     id: suggestionDebounce
                     interval: 250
                     repeat: false
-                    onTriggered: {
-                        var q = symbolField.text.trim()
+                onTriggered: {
+                    var q = symbolField.text.trim()
                         if (q.length < 2) {
                             symbolSuggestions.clear();
                             suggestionsPopup.visible = false;
@@ -152,6 +164,12 @@ ScrollView {
                             main.dbgprint("Starting search for: " + q)
                         }
                         
+                        // Ensure instruments are loaded (gz JSON -> parsed -> cached), fallback to API CSV path
+                        var ensureLoaded = function(next) {
+                            if (upstoxApi._instruments && upstoxApi._instruments.length) { next(); return }
+                            upstoxApi.fetchInstruments(function(){ next() }, function(){ next() })
+                        }
+                        ensureLoaded(function(){
                         upstoxApi.searchTradableSymbols(q, function(results) {
                             if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
                                 main.dbgprint("Search returned " + results.length + " results for query: " + q)
@@ -176,7 +194,8 @@ ScrollView {
                             symbolSuggestions.clear();
                             suggestionsPopup.visible = false
                         })
-                    }
+                        })
+                }
                 }
 
                 Popup {
