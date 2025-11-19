@@ -664,26 +664,28 @@ ScrollView {
             main.dbgprint("ManageView completed - testing Upstox API initialization")
         }
         
-        // Try to load instruments from cache (populated by external script)
-        console.log("StockTea: Attempting to load instruments from cache...")
-        var cacheFile = StandardPaths.writableLocation(StandardPaths.CacheLocation) + "/stocktea/instruments.json"
+        // Try to load instruments from CSV cache (smaller and easier to parse)
+        console.log("StockTea: Attempting to load instruments from CSV cache...")
+        var cacheFile = StandardPaths.writableLocation(StandardPaths.CacheLocation) + "/stocktea/instruments.csv"
         console.log("StockTea: Cache file path: " + cacheFile)
         
-        // Try to read the cache file
+        // Try to read the CSV cache file
         var xhr = new XMLHttpRequest();
         xhr.open("GET", "file://" + cacheFile);
         xhr.onreadystatechange = function() {
             if (xhr.readyState === XMLHttpRequest.DONE) {
                 if (xhr.status === 200 || xhr.status === 0) {
                     try {
-                        console.log("StockTea: Cache file read, parsing...")
-                        var data = JSON.parse(xhr.responseText)
-                        // Manually set the instruments in upstoxApi
-                        upstoxApi._instruments = upstoxApi.parseInstrumentsJSON(data)
+                        console.log("StockTea: CSV cache file read, parsing...")
+                        var csvText = xhr.responseText
+                        console.log("StockTea: CSV text length: " + csvText.length)
+                        
+                        // Parse CSV using the existing parseInstrumentsCSV function
+                        upstoxApi._instruments = upstoxApi.parseInstrumentsCSV(csvText)
                         upstoxApi._lastInstrumentsLoadedAt = Date.now()
-                        console.log("StockTea: Loaded " + upstoxApi._instruments.length + " instruments from cache")
+                        console.log("StockTea: Loaded " + upstoxApi._instruments.length + " instruments from CSV cache")
                     } catch(e) {
-                        console.log("StockTea: Error parsing cache: " + e.message)
+                        console.log("StockTea: Error parsing CSV cache: " + e.message)
                     }
                 } else {
                     console.log("StockTea: Cache file not accessible. Please run: bash contents/code/fetch-instruments.sh")

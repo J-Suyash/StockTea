@@ -1,9 +1,9 @@
 #!/bin/bash
-# Download and decompress Upstox instruments data
+# Download and decompress Upstox instruments data  
 # This script is called by the QML applet to get instrument data
 
 CACHE_DIR="$HOME/.cache/plasmoidviewer/stocktea"
-CACHE_FILE="$CACHE_DIR/instruments.json"
+CACHE_FILE="$CACHE_DIR/instruments.csv"
 CACHE_AGE_HOURS=6
 
 # Create cache directory if it doesn't exist
@@ -21,8 +21,8 @@ if [ -f "$CACHE_FILE" ]; then
     fi
 fi
 
-# Download and decompress the gzipped JSON file
-curl -s "https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz" | gunzip > "$CACHE_FILE.tmp"
+# Download and decompress the gzipped CSV file (smaller than JSON)
+curl -s "https://assets.upstox.com/market-quote/instruments/exchange/complete.csv.gz" | gunzip > "$CACHE_FILE.tmp"
 
 if [ $? -eq 0 ] && [ -s "$CACHE_FILE.tmp" ]; then
     # Success - move temp file to cache
@@ -32,6 +32,6 @@ if [ $? -eq 0 ] && [ -s "$CACHE_FILE.tmp" ]; then
 else
     # Failed - remove temp file and return error
     rm -f "$CACHE_FILE.tmp"
-    echo '{"error": "Failed to download instruments"}' >&2
+    echo "Error: Failed to download instruments" >&2
     exit 1
 fi
