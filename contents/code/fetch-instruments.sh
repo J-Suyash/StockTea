@@ -2,7 +2,7 @@
 # Download and decompress Upstox instruments data
 # This script is called by the QML applet to get instrument data
 
-CACHE_DIR="$HOME/.cache/stocktea"
+CACHE_DIR="$HOME/.cache/plasmoidviewer/stocktea"
 CACHE_FILE="$CACHE_DIR/instruments.json"
 CACHE_AGE_HOURS=6
 
