@@ -46,7 +46,10 @@ Loader {
                 spacing: Math.max(5, parent.width * 0.02)
 
                 Kirigami.Icon {
-                    source: "wallet-closed" // Better default icon
+                    id: defaultIcon
+                    Layout.fillHeight: true
+                    Layout.fillWidth: true
+                    source: "view-bank" // Better default icon (bank/finance related)
                     name: "view-investment"
                     fallback: true
                     Layout.preferredWidth: Math.min(parent.height - 8, Math.max(16, defaultFontPixelSize * 1.5))
