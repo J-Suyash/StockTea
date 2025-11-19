@@ -9,8 +9,10 @@ import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import QtQuick.Layouts
 import QtQuick.Controls
+import Qt.labs.platform 1.1
 import "../code/portfolio-model.js" as PortfolioModel
 import "../code/upstox-data-loader.js" as Upstox
+import "../code/instruments-loader.js" as InstrumentsLoader
 
 ScrollView {
     id: scrollView
@@ -68,6 +70,18 @@ ScrollView {
                         Layout.fillWidth: true
                         text: main.currentPortfolio.name || ""
                         placeholderText: i18n("Enter portfolio name")
+                        
+                        Component.onCompleted: {
+                            // Ensure field is populated on load
+                            text = main.currentPortfolio.name || i18n("My Portfolio")
+                        }
+                        
+                        Connections {
+                            target: main
+                            function onCurrentPortfolioChanged() {
+                                portfolioNameField.text = main.currentPortfolio.name || i18n("My Portfolio")
+                            }
+                        }
                     }
                 }
 
@@ -127,7 +141,6 @@ ScrollView {
                             selectedInstrument = null
                             suggestionDebounce.restart()
                         }
-                        onEditingFinished: suggestionsPopup.visible = false
                     }
                 }
 
@@ -137,22 +150,41 @@ ScrollView {
                     id: suggestionDebounce
                     interval: 250
                     repeat: false
-                    onTriggered: {
-                        var q = symbolField.text.trim()
+                onTriggered: {
+                    console.log("StockTea: Search debounce triggered")
+                    var q = symbolField.text.trim()
                         if (q.length < 2) {
                             symbolSuggestions.clear();
                             suggestionsPopup.visible = false;
+                            console.log("StockTea: Search query too short: " + q)
                             if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
                                 main.dbgprint("Search query too short: " + q)
                             }
                             return
                         }
                         
+                        console.log("StockTea: Starting search for: " + q)
                         if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
                             main.dbgprint("Starting search for: " + q)
                         }
                         
+                        // Ensure instruments are loaded (gz JSON -> parsed -> cached), fallback to API CSV path
+                        var ensureLoaded = function(next) {
+                            console.log("StockTea: Checking if instruments loaded, count: " + (upstoxApi._instruments ? upstoxApi._instruments.length : 0))
+                            if (upstoxApi._instruments && upstoxApi._instruments.length) { next(); return }
+                            console.log("StockTea: Fetching instruments...")
+                            upstoxApi.fetchInstruments(function(){ 
+                                console.log("StockTea: Instruments fetch success")
+                                next() 
+                            }, function(err){ 
+                                console.log("StockTea: Instruments fetch failed: " + err)
+                                next() 
+                            })
+                        }
+                        ensureLoaded(function(){
+                        console.log("StockTea: Calling searchTradableSymbols for: " + q)
                         upstoxApi.searchTradableSymbols(q, function(results) {
+                            console.log("StockTea: Search returned " + results.length + " results")
                             if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
                                 main.dbgprint("Search returned " + results.length + " results for query: " + q)
                             }
@@ -166,17 +198,20 @@ ScrollView {
                             }
                             suggestionsPopup.visible = symbolSuggestions.count > 0
                             
+                            console.log("StockTea: Search popup visibility: " + suggestionsPopup.visible + ", results count: " + symbolSuggestions.count)
                             if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
                                 main.dbgprint("Search popup visibility: " + suggestionsPopup.visible + ", results count: " + symbolSuggestions.count)
                             }
                         }, function(error) {
+                            console.log("StockTea: Search failed: " + error)
                             if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
                                 main.dbgprint("Search failed for query: " + q + ", error: " + error)
                             }
                             symbolSuggestions.clear();
                             suggestionsPopup.visible = false
                         })
-                    }
+                        })
+                }
                 }
 
                 Popup {
@@ -629,18 +664,18 @@ ScrollView {
             main.dbgprint("ManageView completed - testing Upstox API initialization")
         }
         
-        // Test instruments loading
-        upstoxApi.fetchInstruments(function(instruments) {
-            if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
-                main.dbgprint("Instruments loaded successfully: " + instruments.length + " instruments")
-                if (instruments.length > 0) {
-                    main.dbgprint("Sample instruments: " + instruments[0].symbol + " - " + instruments[0].name)
-                }
-            }
-        }, function(error) {
-            if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
-                main.dbgprint("Failed to load instruments: " + error)
-            }
-        })
+        // Load instruments using JavaScript loader
+        console.log("StockTea: Loading instruments via InstrumentsLoader...")
+        var cacheLocation = StandardPaths.writableLocation(StandardPaths.CacheLocation)
+        var result = InstrumentsLoader.loadInstruments(cacheLocation)
+        
+        if (result.success) {
+            console.log("StockTea: Successfully loaded " + result.count + " instruments")
+            upstoxApi._instruments = result.data
+            upstoxApi._lastInstrumentsLoadedAt = Date.now()
+        } else {
+            console.log("StockTea: Failed to load instruments: " + result.error)
+            console.log("StockTea: Please run: bash contents/code/fetch-instruments.sh")
+        }
     }
 }

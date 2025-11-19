@@ -40,8 +40,9 @@ Rectangle {
         }
         
         onClicked: {
-            // Load candlestick data for this position
-            loadCandlestickData(position.symbol)
+            // Load candlestick data for this position (prefer instrument_key for Upstox v3)
+            var keyOrSymbol = position.instrument_key ? position.instrument_key : position.symbol
+            loadCandlestickData(keyOrSymbol)
         }
     }
     

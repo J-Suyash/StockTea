@@ -3,6 +3,9 @@
  * Provides the same interface as stock-data-loader.js for drop-in replacement
  */
 
+// Try to include a gzip inflater (pako) if available in vendor
+try { Qt.include('./vendor/pako_inflate.min.js') } catch (e) { }
+
 function dbgprint(msg) {
     if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
         main.dbgprint('[Upstox] ' + msg)
@@ -30,7 +33,7 @@ function fetchStockData(symbol, successCallback, failureCallback) {
 
     // If caller passed an Upstox instrument_key (contains '|'), use LTP endpoint
     if (typeof symbol === 'string' && symbol.indexOf('|') !== -1) {
-        return api.fetchLtpForInstrument(symbol, function(data) {
+        return api.fetchLtpForInstrument(symbol, function (data) {
             try {
                 var ltp = extractLtpFromResponse(data)
                 if (!ltp || isNaN(ltp)) {
@@ -65,7 +68,7 @@ function fetchStockData(symbol, successCallback, failureCallback) {
                 dbgprint('Error handling LTP response: ' + error.message)
                 fetchYahooFinanceChart(symbol, successCallback, failureCallback)
             }
-        }, function(err) {
+        }, function (err) {
             // On Upstox failure, fallback to Yahoo
             dbgprint('Upstox LTP failed: ' + err)
             fetchYahooFinanceChart(symbol, successCallback, failureCallback)
@@ -78,14 +81,14 @@ function fetchStockData(symbol, successCallback, failureCallback) {
 
 function fetchCandlestickData(symbol, timeframe, successCallback, failureCallback) {
     dbgprint('Fetching candlestick data for symbol: ' + symbol + ', timeframe: ' + timeframe)
-    
+
     var api = new UpstoxAPI()
-    
+
     // Calculate date range based on timeframe
     var now = new Date()
     var fromDate = new Date()
-    
-    switch(timeframe) {
+
+    switch (timeframe) {
         case '1m':
         case '5m':
         case '15m':
@@ -105,15 +108,15 @@ function fetchCandlestickData(symbol, timeframe, successCallback, failureCallbac
         default:
             fromDate.setMonth(now.getMonth() - 1)
     }
-    
+
     var fromDateStr = fromDate.toISOString().split('T')[0]
     var toDateStr = now.toISOString().split('T')[0]
-    
+
     var upstoxSymbol = convertSymbolToUpstoxFormat(symbol)
     var interval = getUpstoxInterval(timeframe)
     var url = api.baseUrl + '/v2/historical-candle/' + upstoxSymbol + '/' + interval + '/' + fromDateStr + '/' + toDateStr
-    
-    return api.makeRequest(url, api.getHeaders(), function(data) {
+
+    return api.makeRequest(url, api.getHeaders(), function (data) {
         try {
             var candles = api.parseHistoricalCandles(data, symbol)
             if (candles && candles.length > 0) {
@@ -125,14 +128,14 @@ function fetchCandlestickData(symbol, timeframe, successCallback, failureCallbac
                                 currency: 'INR',
                                 symbol: symbol
                             },
-                            timestamp: candles.map(function(c) { return Math.floor(c.timestamp.getTime() / 1000) }),
+                            timestamp: candles.map(function (c) { return Math.floor(c.timestamp.getTime() / 1000) }),
                             indicators: {
                                 quote: [{
-                                    open: candles.map(function(c) { return c.open }),
-                                    high: candles.map(function(c) { return c.high }),
-                                    low: candles.map(function(c) { return c.low }),
-                                    close: candles.map(function(c) { return c.close }),
-                                    volume: candles.map(function(c) { return c.volume })
+                                    open: candles.map(function (c) { return c.open }),
+                                    high: candles.map(function (c) { return c.high }),
+                                    low: candles.map(function (c) { return c.low }),
+                                    close: candles.map(function (c) { return c.close }),
+                                    volume: candles.map(function (c) { return c.volume })
                                 }]
                             }
                         }]
@@ -149,29 +152,40 @@ function fetchCandlestickData(symbol, timeframe, successCallback, failureCallbac
     }, failureCallback)
 }
 
+// v3 historical candles (unauthenticated fallback)
+function fetchHistoricalCandlesV3(instrumentKey, timeframe, successCallback, failureCallback) {
+    dbgprint(`Fetching historical candles v3 for: ${instrumentKey}, timeframe: ${timeframe}`)
+
+    var api = new UpstoxAPI()
+    var range = computeV3DateRange(timeframe)
+    var tf = mapToV3Interval(timeframe)
+    var url = `${api.baseUrl}/v3/historical-candle/${encodeURIComponent(instrumentKey)}/${tf.unit}/${tf.multiplier}/${range.from}/${range.to}`
+    return api.makeRequestNoAuthV3(url, function (data) { successCallback(data) }, failureCallback)
+}
+
 function parseStockResponse(jsonString, symbol) {
     try {
         var data = JSON.parse(jsonString)
-        
+
         if (!data.chart || !data.chart.result || data.chart.result.length === 0) {
             throw new Error('Invalid response data')
         }
-        
+
         var result = data.chart.result[0]
         var meta = result.meta || {}
         var timestamps = result.timestamp || []
         var quotes = result.indicators.quote[0] || {}
-        
+
         if (timestamps.length === 0 || !quotes.close) {
             throw new Error('No price data available')
         }
-        
+
         var latestIndex = timestamps.length - 1
         var currentPrice = quotes.close[latestIndex] || 0
         var previousPrice = quotes.close[latestIndex - 1] || meta.regularMarketPreviousClose || currentPrice
         var dayChange = currentPrice - previousPrice
         var dayChangePercent = previousPrice > 0 ? (dayChange / previousPrice) * 100 : 0
-        
+
         return {
             symbol: symbol,
             currentPrice: currentPrice,
@@ -195,14 +209,14 @@ function parseCandlestickData(jsonString, symbol) {
     try {
         var data = JSON.parse(jsonString)
         var candlesticks = []
-        
+
         // Handle different API response formats
         if (data.chart && data.chart.result) {
             // Yahoo Finance format (converted from Upstox)
             var result = data.chart.result[0]
             var timestamps = result.timestamp || []
             var quotes = result.indicators.quote[0] || {}
-            
+
             for (var j = 0; j < timestamps.length; j++) {
                 if (quotes.close[j] !== null && quotes.close[j] !== undefined) {
                     candlesticks.push({
@@ -216,12 +230,12 @@ function parseCandlestickData(jsonString, symbol) {
                 }
             }
         }
-        
+
         // Sort candlesticks by timestamp
-        candlesticks.sort(function(a, b) {
+        candlesticks.sort(function (a, b) {
             return a.timestamp - b.timestamp
         })
-        
+
         return candlesticks
     } catch (error) {
         dbgprint('Error parsing candlestick data: ' + error.message)
@@ -242,7 +256,7 @@ function UpstoxAPI() {
     this._lastInstrumentsLoadedAt = 0
 }
 
-UpstoxAPI.prototype.getHeaders = function() {
+UpstoxAPI.prototype.getHeaders = function () {
     return {
         'Accept': 'application/json',
         'Api-Key': this.apiKey,
@@ -250,7 +264,7 @@ UpstoxAPI.prototype.getHeaders = function() {
     }
 }
 
-UpstoxAPI.prototype.getAuthHeaders = function() {
+UpstoxAPI.prototype.getAuthHeaders = function () {
     return {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
@@ -259,65 +273,90 @@ UpstoxAPI.prototype.getAuthHeaders = function() {
     }
 }
 
-UpstoxAPI.prototype.fetchInstruments = function(successCallback, failureCallback) {
+UpstoxAPI.prototype.fetchInstruments = function (successCallback, failureCallback) {
     var self = this
     dbgprint("Fetching instruments from Upstox API")
-    
+
+    // Check cache first (6 hour TTL)
     if (self._instruments && (Date.now() - self._lastInstrumentsLoadedAt) < 6 * 60 * 60 * 1000) {
         dbgprint("Using cached instruments: " + self._instruments.length + " instruments")
         successCallback(self._instruments)
         return null
     }
-    
-    // Try the direct JSON URL first
-    var jsonUrl = 'https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz'
-    dbgprint("Instruments JSON URL: " + jsonUrl)
-    
-    return this.fetchInstrumentsJSON(jsonUrl, function(data) {
+
+    // Skip gzip file due to XMLHttpRequest file access restrictions in plasmoidviewer
+    // Go directly to CSV endpoint which works without special permissions
+    dbgprint("Skipping gzip file, using CSV API endpoint directly")
+    return this.fetchInstrumentsFromAPI(successCallback, failureCallback)
+}
+
+UpstoxAPI.prototype._fetchInstrumentsGz = function (jsonUrl, successCallback, failureCallback) {
+    var self = this
+    dbgprint("Attempting instruments JSON (gz): " + jsonUrl)
+    return this.fetchInstrumentsJSON(jsonUrl, function (data) {
         try {
             var parsed = self.parseInstrumentsJSON(data)
             self._instruments = parsed
             self._lastInstrumentsLoadedAt = Date.now()
-            dbgprint("Successfully parsed " + parsed.length + " instruments from JSON")
+            dbgprint("Successfully parsed " + parsed.length + " instruments from JSON (gz)")
             successCallback(parsed)
         } catch (e) {
-            dbgprint("Error parsing JSON instruments: " + e.message)
-            failureCallback('Failed to parse instruments data')
+            dbgprint("Error parsing gz instruments JSON: " + e.message)
+            // Final fallback: try API endpoint (CSV)
+            self.fetchInstrumentsFromAPI(successCallback, failureCallback)
         }
-    }, failureCallback)
+    }, function (err) {
+        // Final fallback: try API endpoint (CSV)
+        self.fetchInstrumentsFromAPI(successCallback, failureCallback)
+    })
 }
 
-UpstoxAPI.prototype.fetchInstrumentsJSON = function(jsonUrl, successCallback, failureCallback) {
+UpstoxAPI.prototype.fetchInstrumentsJSON = function (jsonUrl, successCallback, failureCallback) {
+    var self = this
     var xhr = new XMLHttpRequest()
     var startedAt = Date.now()
     emitNetworkLog({ phase: 'open', method: 'GET', url: jsonUrl })
     xhr.open('GET', jsonUrl)
-    xhr.timeout = plasmoid.configuration.apiTimeout || 30000
+    xhr.timeout = (typeof plasmoid !== 'undefined' && plasmoid.configuration && plasmoid.configuration.apiTimeout) ? plasmoid.configuration.apiTimeout : 30000
+    // Fetch as arraybuffer to manually gunzip
     xhr.responseType = 'arraybuffer'
-    xhr.onreadystatechange = function() {
+    xhr.onreadystatechange = function () {
         if (xhr.readyState === XMLHttpRequest.DONE) {
             var ok = xhr.status === 200
             emitNetworkLog({ phase: 'load', method: 'GET', url: jsonUrl, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.response ? xhr.response.byteLength : 0) })
             if (ok) {
                 try {
-                    // For now, try to get uncompressed data or use a simpler approach
-                    // Since pako might not be available, let's try a different approach
-                    dbgprint("Attempting to fetch instruments via API endpoint instead")
-                    self.fetchInstrumentsFromAPI(successCallback, failureCallback)
+                    var buf = xhr.response
+                    if (!buf || !buf.byteLength) throw new Error('Empty gzip payload')
+                    // Use pako or Qt.inflateData if available
+                    var gunzipped
+                    if (typeof pako !== 'undefined' && typeof pako.inflate === 'function') {
+                        gunzipped = pako.inflate(new Uint8Array(buf), { to: 'string' })
+                    } else if (typeof Qt !== 'undefined' && typeof Qt.inflateData === 'function') {
+                        gunzipped = Qt.inflateData(buf)
+                    } else {
+                        throw new Error('No gzip inflater available')
+                    }
+                    var data = JSON.parse(gunzipped)
+                    var parsed = self.parseInstrumentsJSON(data)
+                    self._instruments = parsed
+                    self._lastInstrumentsLoadedAt = Date.now()
+                    successCallback(parsed)
                 } catch (e) {
-                    dbgprint("Error with JSON approach: " + e.message)
-                    failureCallback('Failed to process instruments data')
+                    dbgprint('Gzip instruments error: ' + e.message)
+                    // Fallback to API endpoint (CSV)
+                    self.fetchInstrumentsFromAPI(successCallback, failureCallback)
                 }
             } else {
                 failureCallback('Failed to download instruments JSON')
             }
         }
     }
-    xhr.onerror = function() {
+    xhr.onerror = function () {
         emitNetworkLog({ phase: 'error', method: 'GET', url: jsonUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
         failureCallback('Network error')
     }
-    xhr.ontimeout = function() {
+    xhr.ontimeout = function () {
         emitNetworkLog({ phase: 'timeout', method: 'GET', url: jsonUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
         failureCallback('Request timeout')
     }
@@ -325,53 +364,49 @@ UpstoxAPI.prototype.fetchInstrumentsJSON = function(jsonUrl, successCallback, fa
     return xhr
 }
 
-UpstoxAPI.prototype.fetchInstrumentsFromAPI = function(successCallback, failureCallback) {
-    var self = this
-    dbgprint("Fetching instruments from Upstox API endpoint")
-    
-    var url = this.baseUrl + '/v2/instruments'
-    dbgprint("API Instruments URL: " + url)
-    
-    return this.makeRequest(url, this.getHeaders(), function(resp) {
-        try {
-            dbgprint("Instruments API response received, type: " + typeof resp)
-            
-            if (resp && resp.data && resp.data.csv_file_download_url) {
-                dbgprint("Found CSV download URL: " + resp.data.csv_file_download_url)
-                self.fetchInstrumentsCSV(resp.data.csv_file_download_url, function(text) {
-                    var parsed = self.parseInstrumentsCSV(text)
-                    self._instruments = parsed
-                    self._lastInstrumentsLoadedAt = Date.now()
-                    dbgprint("Successfully parsed " + parsed.length + " instruments from CSV")
-                    successCallback(parsed)
-                }, failureCallback)
-                return
+UpstoxAPI.prototype.fetchInstrumentsJSONText = function (jsonUrl, successCallback, failureCallback) {
+    var xhr = new XMLHttpRequest()
+    var startedAt = Date.now()
+    emitNetworkLog({ phase: 'open', method: 'GET', url: jsonUrl })
+    xhr.open('GET', jsonUrl)
+    xhr.timeout = (typeof plasmoid !== 'undefined' && plasmoid.configuration && plasmoid.configuration.apiTimeout) ? plasmoid.configuration.apiTimeout : 15000
+    xhr.onreadystatechange = function () {
+        if (xhr.readyState === XMLHttpRequest.DONE) {
+            var ok = xhr.status === 200
+            emitNetworkLog({ phase: 'load', method: 'GET', url: jsonUrl, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.responseText ? xhr.responseText.length : 0) })
+            if (ok) {
+                try {
+                    var data = JSON.parse(xhr.responseText)
+                    successCallback(data)
+                } catch (e) {
+                    failureCallback('Invalid JSON')
+                }
+            } else {
+                failureCallback('HTTP ' + xhr.status)
             }
-            if (typeof resp === 'string' && resp.indexOf('instrument_key') !== -1) {
-                dbgprint("Direct CSV response received")
-                var parsed2 = self.parseInstrumentsCSV(resp)
-                self._instruments = parsed2
-                self._lastInstrumentsLoadedAt = Date.now()
-                dbgprint("Successfully parsed " + parsed2.length + " instruments from direct response")
-                successCallback(parsed2)
-                return
-            }
-            dbgprint("Unexpected instruments response format")
-            failureCallback('Unexpected instruments response')
-        } catch (e) {
-            dbgprint("Error processing instruments response: " + e.message)
-            failureCallback('Failed to process instruments')
         }
-    }, failureCallback)
+    }
+    xhr.onerror = function () { emitNetworkLog({ phase: 'error', method: 'GET', url: jsonUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt }); failureCallback('Network error') }
+    xhr.ontimeout = function () { emitNetworkLog({ phase: 'timeout', method: 'GET', url: jsonUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt }); failureCallback('Timeout') }
+    xhr.send()
+    return xhr
 }
 
-UpstoxAPI.prototype.fetchInstrumentsCSV = function(csvUrl, successCallback, failureCallback) {
+UpstoxAPI.prototype.fetchInstrumentsFromAPI = function (successCallback, failureCallback) {
+    // This function is not used anymore since instruments are loaded directly from cache in QML
+    // Kept for backwards compatibility
+    dbgprint("fetchInstrumentsFromAPI called but instruments should be loaded from cache in QML")
+    failureCallback('Instruments should be loaded from cache file by ManageView.qml')
+}
+
+
+UpstoxAPI.prototype.fetchInstrumentsCSV = function (csvUrl, successCallback, failureCallback) {
     var xhr = new XMLHttpRequest()
     var startedAt = Date.now()
     emitNetworkLog({ phase: 'open', method: 'GET', url: csvUrl })
     xhr.open('GET', csvUrl)
     xhr.timeout = plasmoid.configuration.apiTimeout || 20000
-    xhr.onreadystatechange = function() {
+    xhr.onreadystatechange = function () {
         if (xhr.readyState === XMLHttpRequest.DONE) {
             var ok = xhr.status === 200
             emitNetworkLog({ phase: 'load', method: 'GET', url: csvUrl, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.responseText ? xhr.responseText.length : 0) })
@@ -382,11 +417,11 @@ UpstoxAPI.prototype.fetchInstrumentsCSV = function(csvUrl, successCallback, fail
             }
         }
     }
-    xhr.onerror = function() {
+    xhr.onerror = function () {
         emitNetworkLog({ phase: 'error', method: 'GET', url: csvUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
         failureCallback('Network error')
     }
-    xhr.ontimeout = function() {
+    xhr.ontimeout = function () {
         emitNetworkLog({ phase: 'timeout', method: 'GET', url: csvUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
         failureCallback('Request timeout')
     }
@@ -394,34 +429,34 @@ UpstoxAPI.prototype.fetchInstrumentsCSV = function(csvUrl, successCallback, fail
     return xhr
 }
 
-UpstoxAPI.prototype.parseInstrumentsJSON = function(data) {
+UpstoxAPI.prototype.parseInstrumentsJSON = function (data) {
     dbgprint("Parsing instruments JSON, array length: " + (data ? data.length : 0))
-    
+
     if (!data || !Array.isArray(data)) {
         dbgprint("Invalid JSON data format")
         return []
     }
-    
+
     var out = []
     for (var i = 0; i < data.length; i++) {
         var item = data[i]
-        
+
         // Filter for equity instruments only (NSE_EQ, BSE_EQ)
         if (item.segment !== 'NSE_EQ' && item.segment !== 'BSE_EQ') {
             continue
         }
-        
+
         var symbol = item.trading_symbol || ''
         var name = item.name || item.short_name || symbol
         var exchange = item.exchange || ''
         var instrument_key = item.instrument_key || ''
         var isin = item.isin || ''
         var instrument_type = item.instrument_type || ''
-        
+
         if (!symbol) {
             continue
         }
-        
+
         var instrument = {
             symbol: symbol,
             name: name,
@@ -432,73 +467,73 @@ UpstoxAPI.prototype.parseInstrumentsJSON = function(data) {
             segment: item.segment
         }
         out.push(instrument)
-        
+
         if (i < 5) { // Log first few instruments for debugging
             dbgprint("Parsed instrument " + i + ": " + JSON.stringify(instrument))
         }
     }
-    
+
     dbgprint("Total equity instruments parsed: " + out.length)
     return out
 }
 
-UpstoxAPI.prototype.parseInstrumentsCSV = function(text) {
+UpstoxAPI.prototype.parseInstrumentsCSV = function (text) {
     dbgprint("Parsing instruments CSV, text length: " + (text ? text.length : 0))
-    
+
     var lines = (text || '').split(/\r?\n/)
     if (lines.length === 0) {
         dbgprint("No lines in CSV text")
         return []
     }
-    
+
     var header = lines[0].split(',')
     dbgprint("CSV header: " + header.join(', '))
-    
+
     var idx = {}
     for (var i = 0; i < header.length; i++) {
         var headerName = header[i].trim()
         idx[headerName] = i
         dbgprint("Header index " + i + ": " + headerName + " -> " + i)
     }
-    
+
     var out = []
     for (var j = 1; j < lines.length; j++) {
         var line = lines[j]
         if (!line) continue
-        
+
         var cols = line.split(',')
         var symbol = cols[idx.trading_symbol] || cols[idx.tradingsymbol] || ''
         var name = cols[idx.name] || ''
         var exchange = cols[idx.exchange] || ''
         var instrument_key = cols[idx.instrument_key] || ''
         var isin = cols[idx.isin] || ''
-        
+
         if (!symbol) {
             dbgprint("Skipping line " + j + " - no symbol found")
             continue
         }
-        
+
         var instrument = { symbol: symbol, name: name, exchange: exchange, instrument_key: instrument_key, isin: isin }
         out.push(instrument)
-        
+
         if (j <= 5) { // Log first few instruments for debugging
             dbgprint("Parsed instrument " + j + ": " + JSON.stringify(instrument))
         }
     }
-    
+
     dbgprint("Total instruments parsed: " + out.length)
     return out
 }
 
-UpstoxAPI.prototype.searchTradableSymbols = function(query, successCallback, failureCallback) {
+UpstoxAPI.prototype.searchTradableSymbols = function (query, successCallback, failureCallback) {
     var self = this
     var q = String(query || '').trim().toUpperCase()
     if (!q) { successCallback([]); return null }
-    var filterAndReturn = function(list) {
+    var filterAndReturn = function (list) {
         try {
-            var results = list.filter(function(it) {
+            var results = list.filter(function (it) {
                 return (it.symbol && it.symbol.toUpperCase().indexOf(q) !== -1) ||
-                       (it.name && it.name.toUpperCase().indexOf(q) !== -1)
+                    (it.name && it.name.toUpperCase().indexOf(q) !== -1)
             }).slice(0, 25)
             successCallback(results)
         } catch (e) {
@@ -510,79 +545,79 @@ UpstoxAPI.prototype.searchTradableSymbols = function(query, successCallback, fai
         filterAndReturn(self._instruments);
         return null
     }
-    return self.fetchInstruments(function(list) { filterAndReturn(list) }, failureCallback)
+    return self.fetchInstruments(function (list) { filterAndReturn(list) }, failureCallback)
 }
 
-UpstoxAPI.prototype.fetchMarketQuote = function(symbol, successCallback, failureCallback) {
+UpstoxAPI.prototype.fetchMarketQuote = function (symbol, successCallback, failureCallback) {
     dbgprint('Fetching market quote from Upstox for: ' + symbol)
-    
+
     // Convert Indian stock symbol to Upstox format
     const upstoxSymbol = convertSymbolToUpstoxFormat(symbol)
     const url = `${this.baseUrl}/v2/quote/${upstoxSymbol}`
-    
+
     return this.makeRequest(url, this.getHeaders(), successCallback, failureCallback)
 }
 
-UpstoxAPI.prototype.fetchHistoricalCandles = function(symbol, timeframe, fromDate, toDate, successCallback, failureCallback) {
+UpstoxAPI.prototype.fetchHistoricalCandles = function (symbol, timeframe, fromDate, toDate, successCallback, failureCallback) {
     dbgprint(`Fetching historical candles from Upstox for: ${symbol}, timeframe: ${timeframe}`)
-    
+
     const upstoxSymbol = convertSymbolToUpstoxFormat(symbol)
     const interval = getUpstoxInterval(timeframe)
     const url = `${this.baseUrl}/v2/historical-candle/${upstoxSymbol}/${interval}/${fromDate}/${toDate}`
-    
+
     return this.makeRequest(url, this.getHeaders(), successCallback, failureCallback)
 }
 
-UpstoxAPI.prototype.fetchPortfolioPositions = function(successCallback, failureCallback) {
+UpstoxAPI.prototype.fetchPortfolioPositions = function (successCallback, failureCallback) {
     dbgprint('Fetching portfolio positions from Upstox')
-    
+
     const url = `${this.baseUrl}/v2/portfolio/long-term-positions`
-    
+
     return this.makeRequest(url, this.getHeaders(), successCallback, failureCallback)
 }
 
-UpstoxAPI.prototype.fetchFullMarketQuotes = function(symbols, successCallback, failureCallback) {
+UpstoxAPI.prototype.fetchFullMarketQuotes = function (symbols, successCallback, failureCallback) {
     dbgprint('Fetching full market quotes from Upstox for: ' + symbols.join(', '))
-    
+
     // Upstox full market quotes endpoint (v2) expects instrument_keys for best results.
     const symbolList = symbols.join(',')
     const url = `${this.baseUrl}/v2/market-quote/full?instrument_keys=${encodeURIComponent(symbolList)}`
-    
+
     return this.makeRequest(url, this.getHeaders(), successCallback, failureCallback)
 }
 
 // Fetch LTP for a single instrument_key
-UpstoxAPI.prototype.fetchLtpForInstrument = function(instrumentKey, successCallback, failureCallback) {
+UpstoxAPI.prototype.fetchLtpForInstrument = function (instrumentKey, successCallback, failureCallback) {
     const url = `${this.baseUrl}/v2/market-quote/ltp?instrument_key=${encodeURIComponent(instrumentKey)}`
     return this.makeRequest(url, this.getHeaders(), successCallback, failureCallback)
 }
 
-UpstoxAPI.prototype.makeRequest = function(url, headers, successCallback, failureCallback) {
+UpstoxAPI.prototype.makeRequest = function (url, headers, successCallback, failureCallback) {
     const xhr = new XMLHttpRequest()
-    xhr.timeout = plasmoid.configuration.apiTimeout || 15000
-    
+    xhr.timeout = (typeof plasmoid !== 'undefined' && plasmoid.configuration && plasmoid.configuration.apiTimeout) ? plasmoid.configuration.apiTimeout : 15000
+
     dbgprint('Upstox API Request: ' + url)
     const startedAt = Date.now()
     emitNetworkLog({ phase: 'open', method: 'GET', url: url })
     xhr.open('GET', url)
-    
+
     // Set headers
     Object.keys(headers).forEach(key => {
         xhr.setRequestHeader(key, headers[key])
     })
-    
+
     xhr.ontimeout = () => {
         dbgprint('Upstox API timeout')
         emitNetworkLog({ phase: 'timeout', method: 'GET', url: url, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
         failureCallback('Request timeout')
     }
-    
+
     xhr.onerror = (event) => {
         dbgprint('Upstox API error: ' + xhr.status)
         emitNetworkLog({ phase: 'error', method: 'GET', url: url, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
         failureCallback('Network error: ' + xhr.status)
     }
-    
+
     xhr.onload = () => {
         const ok = xhr.status === 200
         emitNetworkLog({ phase: 'load', method: 'GET', url: url, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.responseText ? xhr.responseText.length : 0) })
@@ -605,12 +640,35 @@ UpstoxAPI.prototype.makeRequest = function(url, headers, successCallback, failur
             failureCallback('API error: ' + xhr.status)
         }
     }
-    
+
     xhr.send()
     return xhr
 }
 
-UpstoxAPI.prototype.parseMarketQuote = function(data, symbol) {
+// Minimal v3 request without Authorization header (as per user-provided example)
+UpstoxAPI.prototype.makeRequestNoAuthV3 = function (url, successCallback, failureCallback) {
+    const xhr = new XMLHttpRequest()
+    xhr.timeout = plasmoid.configuration.apiTimeout || 15000
+    dbgprint('Upstox v3 Request: ' + url)
+    const startedAt = Date.now()
+    emitNetworkLog({ phase: 'open', method: 'GET', url: url })
+    xhr.open('GET', url)
+    xhr.setRequestHeader('Accept', 'application/json')
+    xhr.setRequestHeader('Content-Type', 'application/json')
+    xhr.ontimeout = () => { emitNetworkLog({ phase: 'timeout', method: 'GET', url: url, status: xhr.status, ok: false, durationMs: Date.now() - startedAt }); failureCallback('Request timeout') }
+    xhr.onerror = () => { emitNetworkLog({ phase: 'error', method: 'GET', url: url, status: xhr.status, ok: false, durationMs: Date.now() - startedAt }); failureCallback('Network error: ' + xhr.status) }
+    xhr.onload = () => {
+        const ok = xhr.status === 200
+        emitNetworkLog({ phase: 'load', method: 'GET', url: url, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.responseText ? xhr.responseText.length : 0) })
+        if (ok) {
+            try { successCallback(JSON.parse(xhr.responseText)) } catch (e) { failureCallback('Invalid JSON response') }
+        } else { failureCallback('API error: ' + xhr.status) }
+    }
+    xhr.send()
+    return xhr
+}
+
+UpstoxAPI.prototype.parseMarketQuote = function (data, symbol) {
     try {
         if (!data) {
             throw new Error('Empty market quote response')
@@ -646,7 +704,7 @@ UpstoxAPI.prototype.parseMarketQuote = function(data, symbol) {
         const prevClose = Number(quoteData.close || quoteData.closed_price || ohlc.close || ltp)
         const dayChange = ltp - prevClose
         const dayChangePercent = prevClose > 0 ? (dayChange / prevClose) * 100 : 0
-        
+
         return {
             symbol: symbol,
             currentPrice: ltp,
@@ -669,15 +727,15 @@ UpstoxAPI.prototype.parseMarketQuote = function(data, symbol) {
     }
 }
 
-UpstoxAPI.prototype.parseHistoricalCandles = function(data, symbol) {
+UpstoxAPI.prototype.parseHistoricalCandles = function (data, symbol) {
     try {
         if (!data || !data.success || !data.data) {
             throw new Error('Invalid historical data response')
         }
-        
+
         const candles = []
         const candleData = data.data.candles || []
-        
+
         candleData.forEach(candle => {
             candles.push({
                 timestamp: new Date(candle[0]),
@@ -688,7 +746,7 @@ UpstoxAPI.prototype.parseHistoricalCandles = function(data, symbol) {
                 volume: parseInt(candle[5])
             })
         })
-        
+
         return candles.sort((a, b) => a.timestamp - b.timestamp)
     } catch (error) {
         dbgprint('Error parsing Upstox historical candles: ' + error.message)
@@ -696,15 +754,76 @@ UpstoxAPI.prototype.parseHistoricalCandles = function(data, symbol) {
     }
 }
 
-UpstoxAPI.prototype.parsePortfolioPositions = function(data, symbol) {
+// v3 parser
+UpstoxAPI.prototype.parseHistoricalCandlesV3 = function (data, symbol) {
+    try {
+        if (!data || data.status !== 'success' || !data.data) {
+            throw new Error('Invalid historical v3 data response')
+        }
+        const out = []
+        const candles = data.data.candles || []
+        candles.forEach(c => {
+            // Format: [timestampISO, open, high, low, close, volume, oi?]
+            out.push({
+                timestamp: new Date(c[0]),
+                open: Number(c[1]),
+                high: Number(c[2]),
+                low: Number(c[3]),
+                close: Number(c[4]),
+                volume: parseInt(c[5] || 0)
+            })
+        })
+        return out.sort((a, b) => a.timestamp - b.timestamp)
+    } catch (e) {
+        dbgprint('Error parsing Upstox v3 historical candles: ' + e.message)
+        return []
+    }
+}
+
+function mapToV3Interval(timeframe) {
+    switch (String(timeframe)) {
+        case '1m': return { unit: 'minutes', multiplier: 1 }
+        case '5m': return { unit: 'minutes', multiplier: 5 }
+        case '15m': return { unit: 'minutes', multiplier: 15 }
+        case '30m': return { unit: 'minutes', multiplier: 30 }
+        case '1h': return { unit: 'minutes', multiplier: 60 }
+        case '1w': return { unit: 'week', multiplier: 1 }
+        case '1M': return { unit: 'month', multiplier: 1 }
+        case '1d':
+        default: return { unit: 'day', multiplier: 1 }
+    }
+}
+
+function computeV3DateRange(timeframe) {
+    const now = new Date()
+    const to = new Date(now)
+    const from = new Date(now)
+    switch (String(timeframe)) {
+        case '1m':
+        case '5m':
+        case '15m':
+        case '30m':
+        case '1h': from.setDate(now.getDate() - 5); break // ~5 days intraday
+        case '1w': from.setFullYear(now.getFullYear() - 1); break
+        case '1M': from.setFullYear(now.getFullYear() - 2); break
+        case '1d':
+        default: from.setFullYear(now.getFullYear() - 1); break
+    }
+    const iso = d => d.toISOString().slice(0, 10)
+    const f = iso(from)
+    const t = iso(to)
+    return { from: f, to: t }
+}
+
+UpstoxAPI.prototype.parsePortfolioPositions = function (data, symbol) {
     try {
         if (!data || !data.success || !data.data) {
             throw new Error('Invalid portfolio data response')
         }
-        
+
         const positions = []
         const positionData = data.data
-        
+
         positionData.forEach(position => {
             positions.push({
                 symbol: position.trading_symbol || position.tradingsymbol || '',
@@ -720,7 +839,7 @@ UpstoxAPI.prototype.parsePortfolioPositions = function(data, symbol) {
                 dayChangePercent: parseFloat(position.day_change_percent || 0)
             })
         })
-        
+
         return positions
     } catch (error) {
         dbgprint('Error parsing Upstox portfolio positions: ' + error.message)
@@ -734,17 +853,17 @@ function convertSymbolToUpstoxFormat(symbol) {
     if (symbol.includes('NSE_EQ|') || symbol.includes('BSE_EQ|')) {
         return symbol
     }
-    
+
     if (symbol.includes('-EQ')) {
         return symbol
     }
-    
+
     if (symbol.includes('.')) {
         // Convert Yahoo Finance format (e.g., RELIANCE.NS)
         const cleanSymbol = symbol.split('.')[0]
         return `${cleanSymbol}-EQ`
     }
-    
+
     // Default: assume NSE equity
     return `${symbol}-EQ`
 }
@@ -827,9 +946,9 @@ function fetchYahooFinanceChart(symbol, successCallback, failureCallback) {
         dbgprint('Yahoo Finance GET: ' + url)
         xhr.open('GET', url)
         xhr.setRequestHeader('User-Agent', 'Mozilla/5.0 (X11; Linux x86_64) StockPortfolioWidget/2.0')
-        xhr.onerror = function() { failureCallback('Network error') }
-        xhr.ontimeout = function() { failureCallback('Request timeout') }
-        xhr.onload = function() {
+        xhr.onerror = function () { failureCallback('Network error') }
+        xhr.ontimeout = function () { failureCallback('Request timeout') }
+        xhr.onload = function () {
             if (xhr.status !== 200) {
                 return failureCallback('HTTP error: ' + xhr.status)
             }
@@ -841,4 +960,9 @@ function fetchYahooFinanceChart(symbol, successCallback, failureCallback) {
         failureCallback('Yahoo fetch error: ' + e.message)
         return null
     }
+}
+// v3 LTP without auth; return minimal object-like response
+UpstoxAPI.prototype.fetchLtpV3NoAuth = function (instrumentKey, successCallback, failureCallback) {
+    const url = `${this.baseUrl}/v3/market-quote/ltp?instrument_key=${encodeURIComponent(instrumentKey)}`
+    return this.makeRequestNoAuthV3(url, successCallback, failureCallback)
 }

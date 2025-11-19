@@ -100,7 +100,7 @@ Item {
 
         TabButton {
             text: i18n("Portfolio")
-            icon.source: "./piggy-bank-icon.svg"
+            icon.name: "view-investment" // fallback to theme icon if svg missing
         }
         TabButton {
             text: i18n("Chart")
@@ -228,7 +228,7 @@ Item {
                 spacing: 5
 
                 Kirigami.Icon {
-                    source: "./piggy-bank-icon.svg"
+                    source: "view-refresh"
                     Layout.preferredWidth: defaultFontPixelSize
                     Layout.preferredHeight: defaultFontPixelSize
                 }

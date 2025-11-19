@@ -12,6 +12,7 @@ import QtQuick.Controls
 import QtQuick.Shapes
 import "../code/portfolio-model.js" as PortfolioModel
 import "../code/stock-data-loader.js" as StockDataLoader
+import "../code/upstox-data-loader.js" as UpstoxDataLoader
 
 Item {
     id: chartView
@@ -22,6 +23,9 @@ Item {
     property var candlestickData: []
     property int minCandleWidth: 4
     property int candleSpacing: 2
+    property int targetCandles: 100
+    property string currentRange: ""
+    property bool fetching: false
     
     signal symbolDataLoaded(string symbol, var data)
     
@@ -38,7 +42,32 @@ Item {
         loadingIndicator.visible = true
         chartCanvas.visible = false
         
-        var xhr = StockDataLoader.fetchCandlestickData(
+        var xhr = (currentRange && currentRange.length > 0
+                   ? StockDataLoader.fetchCandlestickDataWithRange(symbol, timeframe, currentRange,
+            function(jsonString) {
+                var data = StockDataLoader.parseCandlestickData(jsonString, symbol)
+                if (data && data.length > 0) {
+                    candlestickData = data
+                    updateChart()
+                    symbolDataLoaded(symbol, data)
+                } else {
+                    // Yahoo returned no data – try Upstox v3 unauthenticated if symbol looks like instrument_key
+                    tryUpstoxV3Fallback(symbol, timeframe)
+                }
+                loadingIndicator.visible = false
+                chartCanvas.visible = true
+                fetching = false
+            },
+                function(error) {
+                    if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+                        main.dbgprint("Failed to load candlestick data: " + error)
+                    }
+                    // On Yahoo error, try Upstox v3 fallback
+                    tryUpstoxV3Fallback(symbol, timeframe)
+                loadingIndicator.visible = false
+                fetching = false
+            })
+                   : StockDataLoader.fetchCandlestickData(
             symbol,
             timeframe,
             function(jsonString) {
@@ -48,19 +77,48 @@ Item {
                     updateChart()
                     symbolDataLoaded(symbol, data)
                 } else {
-                    showError(i18n("No chart data available"))
+                    tryUpstoxV3Fallback(symbol, timeframe)
                 }
                 loadingIndicator.visible = false
                 chartCanvas.visible = true
+                fetching = false
             },
                 function(error) {
                     if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
                         main.dbgprint("Failed to load candlestick data: " + error)
                     }
-                    showError(i18n("Failed to load chart data: %1", error))
+                    tryUpstoxV3Fallback(symbol, timeframe)
                 loadingIndicator.visible = false
+                fetching = false
             }
-        )
+        ))
+    }
+
+    function tryUpstoxV3Fallback(symbol, timeframe) {
+        // Expect instrument_key (e.g., NSE_EQ|INE...) in positions metadata, but if we only have a plain symbol, attempt a naive conversion
+        var instrumentKey = symbol
+        if (symbol.indexOf('|') === -1 && symbol.indexOf('-EQ') !== -1) {
+            instrumentKey = symbol.replace('-EQ', '') // unlikely helpful for v3
+        }
+        // If we have no instrument_key pattern, show error
+        if (instrumentKey.indexOf('|') === -1) {
+            showError(i18n("No chart data available"))
+            return
+        }
+        if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
+            main.dbgprint("Yahoo failed; trying Upstox v3 for " + instrumentKey)
+        }
+        UpstoxDataLoader.fetchHistoricalCandlesV3(instrumentKey, timeframe, function(resp) {
+            var candles = UpstoxDataLoader.UpstoxAPI.prototype.parseHistoricalCandlesV3(resp, instrumentKey)
+            if (candles && candles.length) {
+                candlestickData = candles
+                updateChart()
+            } else {
+                showError(i18n("No chart data available"))
+            }
+        }, function(err) {
+            showError(i18n("Failed to load chart data: %1", err))
+        })
     }
     
     function updateChart() {
@@ -129,6 +187,36 @@ Item {
         volumeArea.width = totalWidth
     }
 
+    function computeDesiredRange() {
+        // Determine how many candles we can show at minimum width
+        var step = getCandleStep()
+        var maxCandlesVisible = Math.floor(chartFlick.width / step)
+        var desired = Math.max(targetCandles, maxCandlesVisible * 2) // load about 2x of what we can show
+
+        // Map desired candles to a Yahoo range bucket
+        // Rough heuristic assuming ~75 candles per 3mo for 1d interval
+        if (currentTimeframe === "1d") {
+            if (desired <= 100) return "3mo"
+            if (desired <= 200) return "6mo"
+            if (desired <= 300) return "9mo"
+            if (desired <= 365) return "1y"
+            if (desired <= 600) return "2y"
+            return "5y"
+        }
+        // Fallback for intraday/timeframes
+        return "1mo"
+    }
+
+    function maybeRefetchForViewport() {
+        if (!currentSymbol || fetching) return
+        var nextRange = computeDesiredRange()
+        if (nextRange !== currentRange) {
+            currentRange = nextRange
+            fetching = true
+            loadCandlestickData(currentSymbol, currentTimeframe)
+        }
+    }
+
     function getVisibleRange() {
         var step = getCandleStep()
         var start = Math.floor(chartFlick.contentX / step)
@@ -166,6 +254,7 @@ Item {
                 onCurrentTextChanged: {
                     if (currentText !== currentTimeframe && currentSymbol) {
                         currentTimeframe = currentText
+                        currentRange = "" // reset range so we recompute safe range for this interval
                         loadCandlestickData(currentSymbol, currentTimeframe)
                     }
                 }
@@ -235,6 +324,7 @@ Item {
                     interactive: true
 
                     onContentXChanged: updatePriceLabels()
+                    onWidthChanged: viewportChangedDebounce.restart()
 
                     ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AlwaysOn }
 
@@ -353,6 +443,15 @@ Item {
         updatePriceLabels()
         updateVolumeBars()
     }
+
+    Timer {
+        id: viewportChangedDebounce
+        interval: 200
+        repeat: false
+        onTriggered: maybeRefetchForViewport()
+    }
+
+    onWidthChanged: viewportChangedDebounce.restart()
     
     Component.onCompleted: {
         if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
