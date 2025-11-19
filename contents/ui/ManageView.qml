@@ -141,7 +141,6 @@ ScrollView {
                             selectedInstrument = null
                             suggestionDebounce.restart()
                         }
-                        onEditingFinished: suggestionsPopup.visible = false
                     }
                 }
 
