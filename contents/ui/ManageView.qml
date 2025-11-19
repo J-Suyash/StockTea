@@ -9,7 +9,9 @@ import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import QtQuick.Layouts
 import QtQuick.Controls
-import "../code/portfolio-model.js" as PortfolioModel
+import Qt.labs.platform 1.1
+import Qt.labs.folderlistmodel 2.15
+import "..code/portfolio-model.js" as PortfolioModel
 import "../code/upstox-data-loader.js" as Upstox
 
 ScrollView {
@@ -663,18 +665,53 @@ ScrollView {
             main.dbgprint("ManageView completed - testing Upstox API initialization")
         }
         
-        // Test instruments loading
-        upstoxApi.fetchInstruments(function(instruments) {
-            if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
-                main.dbgprint("Instruments loaded successfully: " + instruments.length + " instruments")
-                if (instruments.length > 0) {
-                    main.dbgprint("Sample instruments: " + instruments[0].symbol + " - " + instruments[0].name)
+        // Run bash script to download and cache instruments
+        console.log("StockTea: Running fetch-instruments script...")
+        instrumentsFetcher.start()
+    }
+    
+    // Process to run bash script for fetching instruments
+    Process {
+        id: instrumentsFetcher
+        program: "/bin/bash"
+        arguments: [Qt.resolvedUrl("../code/fetch-instruments.sh").toString().replace("file://", "")]
+        
+        onFinished: function(exitCode, exitStatus) {
+            console.log("StockTea: Instruments fetch script finished with exit code: " + exitCode)
+            if (exitCode === 0) {
+                // Script succeeded, now try to load from cache
+                var cacheFile = StandardPaths.writableLocation(StandardPaths.CacheLocation) + "/stocktea/instruments.json"
+                console.log("StockTea: Trying to read cache from: " + cacheFile)
+                
+                // Read the cache file
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", "file://" + cacheFile);
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === XMLHttpRequest.DONE) {
+                        if (xhr.status === 200 || xhr.status === 0) {
+                            try {
+                                var data = JSON.parse(xhr.responseText)
+                                // Manually set the instruments in upstoxApi
+                                upstoxApi._instruments = upstoxApi.parseInstrumentsJSON(data)
+                                upstoxApi._lastInstrumentsLoadedAt = Date.now()
+                                console.log("StockTea: Loaded " + upstoxApi._instruments.length + " instruments from cache")
+                            } catch(e) {
+                                console.log("StockTea: Error parsing cache: " + e.message)
+                            }
+                        } else {
+                            console.log("StockTea: Cache file not readable, status: " + xhr.status)
+                        }
+                    }
                 }
+                xhr.send();
+            } else {
+                var error = readAllStandardError()
+                console.log("StockTea: Script failed: " + error)
             }
-        }, function(error) {
-            if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
-                main.dbgprint("Failed to load instruments: " + error)
-            }
-        })
+        }
+        
+        onErrorOccurred: function(error) {
+            console.log("StockTea: Process error: " + error)
+        }
     }
 }
