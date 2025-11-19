@@ -664,34 +664,31 @@ ScrollView {
             main.dbgprint("ManageView completed - testing Upstox API initialization")
         }
         
-        // Try to load instruments from CSV cache (smaller and easier to parse)
-        console.log("StockTea: Attempting to load instruments from CSV cache...")
-        var cacheFile = StandardPaths.writableLocation(StandardPaths.CacheLocation) + "/stocktea/instruments.csv"
-        console.log("StockTea: Cache file path: " + cacheFile)
-        
-        // Try to read the CSV cache file
-        var xhr = new XMLHttpRequest();
-        xhr.open("GET", "file://" + cacheFile);
-        xhr.onreadystatechange = function() {
-            if (xhr.readyState === XMLHttpRequest.DONE) {
-                if (xhr.status === 200 || xhr.status === 0) {
-                    try {
-                        console.log("StockTea: CSV cache file read, parsing...")
-                        var csvText = xhr.responseText
-                        console.log("StockTea: CSV text length: " + csvText.length)
-                        
-                        // Parse CSV using the existing parseInstrumentsCSV function
-                        upstoxApi._instruments = upstoxApi.parseInstrumentsCSV(csvText)
+        // Load instruments from JavaScript file
+        console.log("StockTea: Loading instruments from JavaScript file...")
+        try {
+            var instrumentsPath = StandardPaths.writableLocation(StandardPaths.CacheLocation) + "/stocktea/instruments.js"
+            console.log("StockTea: Instruments file path: " + instrumentsPath)
+            
+            // Include the JavaScript file
+            Qt.include(instrumentsPath, function(result) {
+                if (result.status === Component.Ready) {
+                    console.log("StockTea: Instruments file loaded successfully")
+                    if (typeof INSTRUMENTS_DATA !== 'undefined') {
+                        // Convert the data to the format expected by upstoxApi
+                        upstoxApi._instruments = INSTRUMENTS_DATA
                         upstoxApi._lastInstrumentsLoadedAt = Date.now()
-                        console.log("StockTea: Loaded " + upstoxApi._instruments.length + " instruments from CSV cache")
-                    } catch(e) {
-                        console.log("StockTea: Error parsing CSV cache: " + e.message)
+                        console.log("StockTea: Loaded " + INSTRUMENTS_DATA.length + " instruments")
+                    } else {
+                        console.log("StockTea: INSTRUMENTS_DATA not found in file")
                     }
                 } else {
-                    console.log("StockTea: Cache file not accessible. Please run: bash contents/code/fetch-instruments.sh")
+                    console.log("StockTea: Failed to load instruments file: " + result.status)
+                    console.log("StockTea: Please run: bash contents/code/fetch-instruments.sh")
                 }
-            }
+            })
+        } catch(e) {
+            console.log("StockTea: Error loading instruments: " + e.message)
         }
-        xhr.send();
     }
 }
