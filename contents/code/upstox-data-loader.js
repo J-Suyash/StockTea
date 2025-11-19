@@ -394,30 +394,87 @@ UpstoxAPI.prototype.fetchInstrumentsJSONText = function (jsonUrl, successCallbac
 
 UpstoxAPI.prototype.fetchInstrumentsFromAPI = function (successCallback, failureCallback) {
     var self = this
-    dbgprint("Fetching instruments from public CSV endpoint")
+    dbgprint("Fetching instruments using bash script helper")
 
-    // Use the complete instruments CSV - publicly accessible, no auth required
-    // CSV is uncompressed and works without gzip decompression
-    var publicCsvUrl = 'https://assets.upstox.com/market-quote/instruments/exchange/complete.csv'
+    // Use bash script to download and decompress the gzipped JSON file
+    // The script handles caching and decompression
+    var scriptPath = Qt.resolvedUrl('../code/fetch-instruments.sh').toString().replace('file://', '')
 
-    dbgprint("Public CSV URL: " + publicCsvUrl)
+    dbgprint("Running script: " + scriptPath)
 
-    return this.fetchInstrumentsCSV(publicCsvUrl, function (text) {
-        try {
-            dbgprint("Downloaded " + text.length + " characters, parsing CSV...")
-            var parsed = self.parseInstrumentsCSV(text)
-            self._instruments = parsed
-            self._lastInstrumentsLoadedAt = Date.now()
-            dbgprint("Successfully parsed " + parsed.length + " instruments from CSV")
-            successCallback(parsed)
-        } catch (e) {
-            dbgprint("Error parsing CSV: " + e.message)
-            failureCallback('Failed to parse instruments CSV: ' + e.message)
+    // Use Qt.createQmlObject to run the bash script
+    try {
+        var process = Qt.createQmlObject('import QtQuick 2.15; import Qt.labs.platform 1.1; Process { }', this)
+        if (!process) {
+            dbgprint("Qt.labs.platform.Process not available, trying alternative method")
+            // Fallback: try to read from cache directly
+            return this.fetchInstrumentsFromCache(successCallback, failureCallback)
         }
-    }, function (err) {
-        dbgprint("Failed to fetch CSV: " + err)
-        failureCallback('Failed to fetch instruments: ' + err)
-    })
+
+        process.program = '/bin/bash'
+        process.arguments = [scriptPath]
+
+        process.finished.connect(function (exitCode, exitStatus) {
+            if (exitCode === 0) {
+                try {
+                    var output = process.readAllStandardOutput()
+                    dbgprint("Script output length: " + output.length)
+                    var data = JSON.parse(output)
+                    var parsed = self.parseInstrumentsJSON(data)
+                    self._instruments = parsed
+                    self._lastInstrumentsLoadedAt = Date.now()
+                    dbgprint("Successfully parsed " + parsed.length + " instruments from script")
+                    successCallback(parsed)
+                } catch (e) {
+                    dbgprint("Error parsing script output: " + e.message)
+                    failureCallback('Failed to parse instruments: ' + e.message)
+                }
+            } else {
+                var error = process.readAllStandardError()
+                dbgprint("Script failed with exit code " + exitCode + ": " + error)
+                failureCallback('Script failed: ' + error)
+            }
+        })
+
+        process.start()
+
+    } catch (e) {
+        dbgprint("Error running script: " + e.message + ", trying cache fallback")
+        return this.fetchInstrumentsFromCache(successCallback, failureCallback)
+    }
+}
+
+// Fallback: try to read from cache file directly
+UpstoxAPI.prototype.fetchInstrumentsFromCache = function (successCallback, failureCallback) {
+    var self = this
+    var cacheFile = Qt.resolvedUrl('~/.cache/stocktea/instruments.json').toString().replace('file://', '')
+
+    dbgprint("Trying to read from cache: " + cacheFile)
+
+    // Try to read the cache file using XMLHttpRequest with file:// protocol
+    var xhr = new XMLHttpRequest()
+    xhr.open('GET', 'file://' + cacheFile)
+    xhr.onreadystatechange = function () {
+        if (xhr.readyState === XMLHttpRequest.DONE) {
+            if (xhr.status === 200 || xhr.status === 0) {
+                try {
+                    var data = JSON.parse(xhr.responseText)
+                    var parsed = self.parseInstrumentsJSON(data)
+                    self._instruments = parsed
+                    self._lastInstrumentsLoadedAt = Date.now()
+                    dbgprint("Successfully loaded " + parsed.length + " instruments from cache")
+                    successCallback(parsed)
+                } catch (e) {
+                    dbgprint("Error parsing cache: " + e.message)
+                    failureCallback('Failed to parse cache: ' + e.message)
+                }
+            } else {
+                dbgprint("Cache file not accessible")
+                failureCallback('Cache file not accessible')
+            }
+        }
+    }
+    xhr.send()
 }
 
 UpstoxAPI.prototype.fetchInstrumentsCSV = function (csvUrl, successCallback, failureCallback) {
