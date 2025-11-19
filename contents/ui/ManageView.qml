@@ -150,27 +150,40 @@ ScrollView {
                     interval: 250
                     repeat: false
                 onTriggered: {
+                    console.log("StockTea: Search debounce triggered")
                     var q = symbolField.text.trim()
                         if (q.length < 2) {
                             symbolSuggestions.clear();
                             suggestionsPopup.visible = false;
+                            console.log("StockTea: Search query too short: " + q)
                             if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
                                 main.dbgprint("Search query too short: " + q)
                             }
                             return
                         }
                         
+                        console.log("StockTea: Starting search for: " + q)
                         if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
                             main.dbgprint("Starting search for: " + q)
                         }
                         
                         // Ensure instruments are loaded (gz JSON -> parsed -> cached), fallback to API CSV path
                         var ensureLoaded = function(next) {
+                            console.log("StockTea: Checking if instruments loaded, count: " + (upstoxApi._instruments ? upstoxApi._instruments.length : 0))
                             if (upstoxApi._instruments && upstoxApi._instruments.length) { next(); return }
-                            upstoxApi.fetchInstruments(function(){ next() }, function(){ next() })
+                            console.log("StockTea: Fetching instruments...")
+                            upstoxApi.fetchInstruments(function(){ 
+                                console.log("StockTea: Instruments fetch success")
+                                next() 
+                            }, function(err){ 
+                                console.log("StockTea: Instruments fetch failed: " + err)
+                                next() 
+                            })
                         }
                         ensureLoaded(function(){
+                        console.log("StockTea: Calling searchTradableSymbols for: " + q)
                         upstoxApi.searchTradableSymbols(q, function(results) {
+                            console.log("StockTea: Search returned " + results.length + " results")
                             if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
                                 main.dbgprint("Search returned " + results.length + " results for query: " + q)
                             }
@@ -184,10 +197,12 @@ ScrollView {
                             }
                             suggestionsPopup.visible = symbolSuggestions.count > 0
                             
+                            console.log("StockTea: Search popup visibility: " + suggestionsPopup.visible + ", results count: " + symbolSuggestions.count)
                             if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
                                 main.dbgprint("Search popup visibility: " + suggestionsPopup.visible + ", results count: " + symbolSuggestions.count)
                             }
                         }, function(error) {
+                            console.log("StockTea: Search failed: " + error)
                             if (typeof main !== 'undefined' && typeof main.dbgprint === 'function') {
                                 main.dbgprint("Search failed for query: " + q + ", error: " + error)
                             }
