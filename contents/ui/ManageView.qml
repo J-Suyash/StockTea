@@ -10,7 +10,6 @@ import org.kde.kirigami as Kirigami
 import QtQuick.Layouts
 import QtQuick.Controls
 import Qt.labs.platform 1.1
-import Qt.labs.folderlistmodel 2.15
 import "../code/portfolio-model.js" as PortfolioModel
 import "../code/upstox-data-loader.js" as Upstox
 
@@ -665,53 +664,32 @@ ScrollView {
             main.dbgprint("ManageView completed - testing Upstox API initialization")
         }
         
-        // Run bash script to download and cache instruments
-        console.log("StockTea: Running fetch-instruments script...")
-        instrumentsFetcher.start()
-    }
-    
-    // Process to run bash script for fetching instruments
-    Process {
-        id: instrumentsFetcher
-        program: "/bin/bash"
-        arguments: [Qt.resolvedUrl("../code/fetch-instruments.sh").toString().replace("file://", "")]
+        // Try to load instruments from cache (populated by external script)
+        console.log("StockTea: Attempting to load instruments from cache...")
+        var cacheFile = StandardPaths.writableLocation(StandardPaths.CacheLocation) + "/stocktea/instruments.json"
+        console.log("StockTea: Cache file path: " + cacheFile)
         
-        onFinished: function(exitCode, exitStatus) {
-            console.log("StockTea: Instruments fetch script finished with exit code: " + exitCode)
-            if (exitCode === 0) {
-                // Script succeeded, now try to load from cache
-                var cacheFile = StandardPaths.writableLocation(StandardPaths.CacheLocation) + "/stocktea/instruments.json"
-                console.log("StockTea: Trying to read cache from: " + cacheFile)
-                
-                // Read the cache file
-                var xhr = new XMLHttpRequest();
-                xhr.open("GET", "file://" + cacheFile);
-                xhr.onreadystatechange = function() {
-                    if (xhr.readyState === XMLHttpRequest.DONE) {
-                        if (xhr.status === 200 || xhr.status === 0) {
-                            try {
-                                var data = JSON.parse(xhr.responseText)
-                                // Manually set the instruments in upstoxApi
-                                upstoxApi._instruments = upstoxApi.parseInstrumentsJSON(data)
-                                upstoxApi._lastInstrumentsLoadedAt = Date.now()
-                                console.log("StockTea: Loaded " + upstoxApi._instruments.length + " instruments from cache")
-                            } catch(e) {
-                                console.log("StockTea: Error parsing cache: " + e.message)
-                            }
-                        } else {
-                            console.log("StockTea: Cache file not readable, status: " + xhr.status)
-                        }
+        // Try to read the cache file
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "file://" + cacheFile);
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                if (xhr.status === 200 || xhr.status === 0) {
+                    try {
+                        console.log("StockTea: Cache file read, parsing...")
+                        var data = JSON.parse(xhr.responseText)
+                        // Manually set the instruments in upstoxApi
+                        upstoxApi._instruments = upstoxApi.parseInstrumentsJSON(data)
+                        upstoxApi._lastInstrumentsLoadedAt = Date.now()
+                        console.log("StockTea: Loaded " + upstoxApi._instruments.length + " instruments from cache")
+                    } catch(e) {
+                        console.log("StockTea: Error parsing cache: " + e.message)
                     }
+                } else {
+                    console.log("StockTea: Cache file not accessible. Please run: bash contents/code/fetch-instruments.sh")
                 }
-                xhr.send();
-            } else {
-                var error = readAllStandardError()
-                console.log("StockTea: Script failed: " + error)
             }
         }
-        
-        onErrorOccurred: function(error) {
-            console.log("StockTea: Process error: " + error)
-        }
+        xhr.send();
     }
 }
