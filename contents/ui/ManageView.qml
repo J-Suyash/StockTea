@@ -11,7 +11,7 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import Qt.labs.platform 1.1
 import Qt.labs.folderlistmodel 2.15
-import "..code/portfolio-model.js" as PortfolioModel
+import "../code/portfolio-model.js" as PortfolioModel
 import "../code/upstox-data-loader.js" as Upstox
 
 ScrollView {
