@@ -17,6 +17,36 @@ function fetchCandlestickData(symbol, timeframe, successCallback, failureCallbac
     return fetchJsonFromInternet(apiUrl, successCallback, failureCallback)
 }
 
+// Optional: fetch with explicit Yahoo range override (e.g., '3mo','6mo','1y')
+function fetchCandlestickDataWithRange(symbol, timeframe, rangeOverride, successCallback, failureCallback) {
+    dbgprint('Fetching candlestick data with range for symbol: ' + symbol + ', timeframe: ' + timeframe + ', range: ' + rangeOverride)
+    var ySymbol = normalizeYahooSymbol(symbol)
+    var interval = mapToYahooInterval(timeframe)
+    var desired = String(rangeOverride || mapToYahooRange(timeframe))
+    var range = mapToYahooSafeRange(interval, desired)
+    var apiUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/' + ySymbol + '?interval=' + interval + '&range=' + range
+    return fetchJsonFromInternet(apiUrl, successCallback, failureCallback)
+}
+
+function mapToYahooSafeRange(interval, desiredRange) {
+    // Yahoo imposes constraints: 1m → up to 7d; 5m/15m → up to 1mo; 30m/60m → up to a few months; 1d → years.
+    // Keep conservative, avoid 422/400 errors.
+    const safe = {
+        '1m': ['1d', '5d'],
+        '5m': ['5d', '1mo'],
+        '15m': ['1mo'],
+        '30m': ['1mo'],
+        '60m': ['1mo'],
+        '1d': ['1mo', '3mo', '6mo', '1y', '2y', '5y', '10y'],
+        '1wk': ['1y', '2y', '5y', '10y'],
+        '1mo': ['1y', '2y', '5y', '10y']
+    }
+    const list = safe[interval] || ['1mo']
+    if (list.indexOf(desiredRange) !== -1) return desiredRange
+    // pick the largest safe range for this interval
+    return list[list.length - 1]
+}
+
 function buildApiUrl(symbol) {
     var ySymbol = normalizeYahooSymbol(symbol)
     return 'https://query1.finance.yahoo.com/v8/finance/chart/' + ySymbol

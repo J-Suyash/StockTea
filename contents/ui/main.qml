@@ -52,7 +52,7 @@ PlasmoidItem {
                 spacing: 8
 
                 Kirigami.Icon {
-                    source: "./piggy-bank-icon.svg"
+                    source: "view-investment"
                     Layout.preferredWidth: Math.min(parent.height - 8, 24)
                     Layout.preferredHeight: Math.min(parent.height - 8, 24)
                     Layout.alignment: Qt.AlignVCenter | Qt.AlignHCenter
@@ -298,13 +298,10 @@ PlasmoidItem {
             })
             
             var symbolToFetch = symbol
-            // Use instrument_key only if Upstox auth is configured; otherwise, keep plain symbol for Yahoo fallback
-            var hasUpstoxAuth = !!plasmoid.configuration.upstoxAccessToken
-            if (position && position.instrument_key && hasUpstoxAuth) {
+            // Prefer Upstox instrument_key when available for primary data source
+            if (position && position.instrument_key) {
                 symbolToFetch = position.instrument_key
                 dbgprint("Using instrument_key for " + symbol + ": " + symbolToFetch)
-            } else if (position && position.instrument_key && !hasUpstoxAuth) {
-                dbgprint("Upstox auth not configured; skipping instrument_key for " + symbol)
             }
             
             var xhr = StockDataLoader.fetchStockData(

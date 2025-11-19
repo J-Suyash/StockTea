@@ -1,7 +1,6 @@
 // Instruments loader - loads instruments data from cache file
 // This file is imported by ManageView.qml
 
-.pragma library
 
 var instrumentsData = []
 var lastLoadedAt = 0
