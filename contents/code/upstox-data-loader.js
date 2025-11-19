@@ -394,62 +394,30 @@ UpstoxAPI.prototype.fetchInstrumentsJSONText = function (jsonUrl, successCallbac
 
 UpstoxAPI.prototype.fetchInstrumentsFromAPI = function (successCallback, failureCallback) {
     var self = this
-    dbgprint("Fetching instruments from public JSON endpoint")
+    dbgprint("Fetching instruments from public CSV endpoint")
 
-    // Use the complete instruments JSON (uncompressed) - publicly accessible, no auth required
-    // Note: We're using the uncompressed version because Qt.inflateData is not available in all Qt versions
-    var publicJsonUrl = 'https://assets.upstox.com/market-quote/instruments/exchange/complete.json'
+    // Use the complete instruments CSV - publicly accessible, no auth required
+    // CSV is uncompressed and works without gzip decompression
+    var publicCsvUrl = 'https://assets.upstox.com/market-quote/instruments/exchange/complete.csv'
 
-    dbgprint("Public JSON URL: " + publicJsonUrl)
+    dbgprint("Public CSV URL: " + publicCsvUrl)
 
-    // Fetch the JSON file directly
-    var xhr = new XMLHttpRequest()
-    var startedAt = Date.now()
-    emitNetworkLog({ phase: 'open', method: 'GET', url: publicJsonUrl })
-    xhr.open('GET', publicJsonUrl)
-    xhr.timeout = 60000 // Longer timeout for large file
-
-    xhr.onreadystatechange = function () {
-        if (xhr.readyState === XMLHttpRequest.DONE) {
-            var ok = xhr.status === 200
-            emitNetworkLog({ phase: 'load', method: 'GET', url: publicJsonUrl, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.responseText ? xhr.responseText.length : 0) })
-
-            if (ok) {
-                try {
-                    dbgprint("Downloaded " + xhr.responseText.length + " characters, parsing JSON...")
-
-                    var data = JSON.parse(xhr.responseText)
-                    var parsed = self.parseInstrumentsJSON(data)
-                    self._instruments = parsed
-                    self._lastInstrumentsLoadedAt = Date.now()
-                    dbgprint("Successfully parsed " + parsed.length + " instruments from JSON")
-                    successCallback(parsed)
-
-                } catch (e) {
-                    dbgprint("Error processing JSON: " + e.message)
-                    failureCallback('Failed to process instruments: ' + e.message)
-                }
-            } else {
-                dbgprint("Failed to download JSON: HTTP " + xhr.status)
-                failureCallback('Failed to download instruments: HTTP ' + xhr.status)
-            }
+    return this.fetchInstrumentsCSV(publicCsvUrl, function (text) {
+        try {
+            dbgprint("Downloaded " + text.length + " characters, parsing CSV...")
+            var parsed = self.parseInstrumentsCSV(text)
+            self._instruments = parsed
+            self._lastInstrumentsLoadedAt = Date.now()
+            dbgprint("Successfully parsed " + parsed.length + " instruments from CSV")
+            successCallback(parsed)
+        } catch (e) {
+            dbgprint("Error parsing CSV: " + e.message)
+            failureCallback('Failed to parse instruments CSV: ' + e.message)
         }
-    }
-
-    xhr.onerror = function () {
-        emitNetworkLog({ phase: 'error', method: 'GET', url: publicJsonUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
-        dbgprint("Network error downloading JSON")
-        failureCallback('Network error')
-    }
-
-    xhr.ontimeout = function () {
-        emitNetworkLog({ phase: 'timeout', method: 'GET', url: publicJsonUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
-        dbgprint("Timeout downloading JSON")
-        failureCallback('Request timeout')
-    }
-
-    xhr.send()
-    return xhr
+    }, function (err) {
+        dbgprint("Failed to fetch CSV: " + err)
+        failureCallback('Failed to fetch instruments: ' + err)
+    })
 }
 
 UpstoxAPI.prototype.fetchInstrumentsCSV = function (csvUrl, successCallback, failureCallback) {
