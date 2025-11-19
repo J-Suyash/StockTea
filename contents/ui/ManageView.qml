@@ -12,6 +12,7 @@ import QtQuick.Controls
 import Qt.labs.platform 1.1
 import "../code/portfolio-model.js" as PortfolioModel
 import "../code/upstox-data-loader.js" as Upstox
+import "../code/instruments-loader.js" as InstrumentsLoader
 
 ScrollView {
     id: scrollView
@@ -664,31 +665,18 @@ ScrollView {
             main.dbgprint("ManageView completed - testing Upstox API initialization")
         }
         
-        // Load instruments from JavaScript file
-        console.log("StockTea: Loading instruments from JavaScript file...")
-        try {
-            var instrumentsPath = StandardPaths.writableLocation(StandardPaths.CacheLocation) + "/stocktea/instruments.js"
-            console.log("StockTea: Instruments file path: " + instrumentsPath)
-            
-            // Include the JavaScript file
-            Qt.include(instrumentsPath, function(result) {
-                if (result.status === Component.Ready) {
-                    console.log("StockTea: Instruments file loaded successfully")
-                    if (typeof INSTRUMENTS_DATA !== 'undefined') {
-                        // Convert the data to the format expected by upstoxApi
-                        upstoxApi._instruments = INSTRUMENTS_DATA
-                        upstoxApi._lastInstrumentsLoadedAt = Date.now()
-                        console.log("StockTea: Loaded " + INSTRUMENTS_DATA.length + " instruments")
-                    } else {
-                        console.log("StockTea: INSTRUMENTS_DATA not found in file")
-                    }
-                } else {
-                    console.log("StockTea: Failed to load instruments file: " + result.status)
-                    console.log("StockTea: Please run: bash contents/code/fetch-instruments.sh")
-                }
-            })
-        } catch(e) {
-            console.log("StockTea: Error loading instruments: " + e.message)
+        // Load instruments using JavaScript loader
+        console.log("StockTea: Loading instruments via InstrumentsLoader...")
+        var cacheLocation = StandardPaths.writableLocation(StandardPaths.CacheLocation)
+        var result = InstrumentsLoader.loadInstruments(cacheLocation)
+        
+        if (result.success) {
+            console.log("StockTea: Successfully loaded " + result.count + " instruments")
+            upstoxApi._instruments = result.data
+            upstoxApi._lastInstrumentsLoadedAt = Date.now()
+        } else {
+            console.log("StockTea: Failed to load instruments: " + result.error)
+            console.log("StockTea: Please run: bash contents/code/fetch-instruments.sh")
         }
     }
 }
