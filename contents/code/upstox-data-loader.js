@@ -394,77 +394,57 @@ UpstoxAPI.prototype.fetchInstrumentsJSONText = function (jsonUrl, successCallbac
 
 UpstoxAPI.prototype.fetchInstrumentsFromAPI = function (successCallback, failureCallback) {
     var self = this
-    dbgprint("Fetching instruments from public JSON.gz endpoint")
+    dbgprint("Fetching instruments from public JSON endpoint")
 
-    // Use the complete instruments JSON (gzipped) - publicly accessible, no auth required
-    // JSON is faster to parse than CSV
-    var publicJsonGzUrl = 'https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz'
+    // Use the complete instruments JSON (uncompressed) - publicly accessible, no auth required
+    // Note: We're using the uncompressed version because Qt.inflateData is not available in all Qt versions
+    var publicJsonUrl = 'https://assets.upstox.com/market-quote/instruments/exchange/complete.json'
 
-    dbgprint("Public JSON.gz URL: " + publicJsonGzUrl)
+    dbgprint("Public JSON URL: " + publicJsonUrl)
 
-    // Fetch the gzipped JSON file
+    // Fetch the JSON file directly
     var xhr = new XMLHttpRequest()
     var startedAt = Date.now()
-    emitNetworkLog({ phase: 'open', method: 'GET', url: publicJsonGzUrl })
-    xhr.open('GET', publicJsonGzUrl)
-    xhr.timeout = 30000
-    xhr.responseType = 'arraybuffer' // Get binary data
+    emitNetworkLog({ phase: 'open', method: 'GET', url: publicJsonUrl })
+    xhr.open('GET', publicJsonUrl)
+    xhr.timeout = 60000 // Longer timeout for large file
 
     xhr.onreadystatechange = function () {
         if (xhr.readyState === XMLHttpRequest.DONE) {
             var ok = xhr.status === 200
-            emitNetworkLog({ phase: 'load', method: 'GET', url: publicJsonGzUrl, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.response ? xhr.response.byteLength : 0) })
+            emitNetworkLog({ phase: 'load', method: 'GET', url: publicJsonUrl, status: xhr.status, ok: ok, durationMs: Date.now() - startedAt, size: (xhr.responseText ? xhr.responseText.length : 0) })
 
             if (ok) {
                 try {
-                    var buf = xhr.response
-                    if (!buf || !buf.byteLength) {
-                        throw new Error('Empty gzip payload')
-                    }
+                    dbgprint("Downloaded " + xhr.responseText.length + " characters, parsing JSON...")
 
-                    dbgprint("Downloaded " + buf.byteLength + " bytes, attempting to decompress...")
-
-                    // Try to decompress using pako if available
-                    var decompressed
-                    if (typeof pako !== 'undefined' && typeof pako.inflate === 'function') {
-                        dbgprint("Using pako to decompress")
-                        decompressed = pako.inflate(new Uint8Array(buf), { to: 'string' })
-                    } else {
-                        // Fallback: try to read as text directly (might work if server sends uncompressed)
-                        dbgprint("No pako available, trying direct text conversion")
-                        var decoder = new TextDecoder('utf-8')
-                        decompressed = decoder.decode(new Uint8Array(buf))
-                    }
-
-                    dbgprint("Decompressed " + decompressed.length + " characters, parsing JSON...")
-
-                    var data = JSON.parse(decompressed)
+                    var data = JSON.parse(xhr.responseText)
                     var parsed = self.parseInstrumentsJSON(data)
                     self._instruments = parsed
                     self._lastInstrumentsLoadedAt = Date.now()
-                    dbgprint("Successfully parsed " + parsed.length + " instruments from JSON.gz")
+                    dbgprint("Successfully parsed " + parsed.length + " instruments from JSON")
                     successCallback(parsed)
 
                 } catch (e) {
-                    dbgprint("Error processing JSON.gz: " + e.message)
+                    dbgprint("Error processing JSON: " + e.message)
                     failureCallback('Failed to process instruments: ' + e.message)
                 }
             } else {
-                dbgprint("Failed to download JSON.gz: HTTP " + xhr.status)
+                dbgprint("Failed to download JSON: HTTP " + xhr.status)
                 failureCallback('Failed to download instruments: HTTP ' + xhr.status)
             }
         }
     }
 
     xhr.onerror = function () {
-        emitNetworkLog({ phase: 'error', method: 'GET', url: publicJsonGzUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
-        dbgprint("Network error downloading JSON.gz")
+        emitNetworkLog({ phase: 'error', method: 'GET', url: publicJsonUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
+        dbgprint("Network error downloading JSON")
         failureCallback('Network error')
     }
 
     xhr.ontimeout = function () {
-        emitNetworkLog({ phase: 'timeout', method: 'GET', url: publicJsonGzUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
-        dbgprint("Timeout downloading JSON.gz")
+        emitNetworkLog({ phase: 'timeout', method: 'GET', url: publicJsonUrl, status: xhr.status, ok: false, durationMs: Date.now() - startedAt })
+        dbgprint("Timeout downloading JSON")
         failureCallback('Request timeout')
     }
 
