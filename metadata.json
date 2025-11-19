@@ -27,7 +27,7 @@
         "Description[ru]": "Виджет KDE Plasma для управления индийским портфелем акций с данными в реальном времени от Upstox",
         "Description[sv]": "KDE Plasma-widget för hantering av indisk aktieportfölj med realtidsdata från Upstox",
         "Description[zh_CN]": "用于印度股票投资组合管理的KDE Plasma小部件，使用Upstox实时数据",
-        "Icon": "view-bank",
+        "Icon": "office-chart-line-stacked",
         "Id": "org.kde.plasma.widgets.stocktea",
         "Version": "1.0.0",
         "License": "GPL-2.0-or-later",
