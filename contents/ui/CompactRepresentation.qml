@@ -49,7 +49,7 @@ Loader {
                     id: defaultIcon
                     Layout.fillHeight: true
                     Layout.fillWidth: true
-                    source: "office-chart-line-stacked" // Stock chart icon
+                    source: Qt.resolvedUrl("./piggy-bank-icon.svg") // Custom piggy-bank icon
                     name: "view-investment"
                     fallback: true
                     Layout.preferredWidth: Math.min(parent.height - 8, Math.max(16, defaultFontPixelSize * 1.5))
